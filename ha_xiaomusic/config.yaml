@@ -35,7 +35,7 @@ options:
   search_prefix: "bilisearch:"
   verbose: false
 schema:
-  conversation_entity: str
+  conversation_entity: str?
   media_player: str?
   command_prefixes: str?
   poll_interval_seconds: float?

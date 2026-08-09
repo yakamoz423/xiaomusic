@@ -41,11 +41,12 @@
 
 本 fork 提供 **HAOS Addon**：通过 `hass_xiaomi_miot` 的 conversation 传感器接收口令，yt-dlp 下歌后用 `media_player.play_media` 播放，**无需填写小米账号**。
 
-1. HA：**设置 → 插件 → 插件商店 → ⋮ → 仓库**，添加 `https://github.com/yakamoz423/xiaomusic`
+1. HA：**设置 → 插件 → 插件商店 → ⋮ → 仓库**，添加 **`https://github.com/yakamoz423/addon-xiaomusic`**（轻量插件仓库，推荐）
 2. 安装 **XiaoMusic**，填写 `conversation_entity`（及可选 `media_player`）后启动
-3. 详细说明见 [`ha_xiaomusic/DOCS.md`](ha_xiaomusic/DOCS.md)
+3. 详细说明见 [addon-xiaomusic](https://github.com/yakamoz423/addon-xiaomusic) / [`ha_xiaomusic/DOCS.md`](ha_xiaomusic/DOCS.md)
 
-镜像：`ghcr.io/yakamoz423/{arch}-xiaomusic`（由 GitHub Actions 构建）。
+镜像：`ghcr.io/yakamoz423/{arch}-xiaomusic`（由本仓库 GitHub Actions 构建）。
+
 
 ## 👋 快速入门指南
 
