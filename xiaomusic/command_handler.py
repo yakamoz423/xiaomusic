@@ -63,8 +63,10 @@ class CommandHandler:
                 await device.check_replay()
                 return
 
-            # 执行命令前先停止小爱，避免播放"不支持"提示
+            # 执行命令前先停止小爱原生回复（"还不支持…"等），再走下载/播放。
             await device.group_force_stop_xiaoai()
+            if hasattr(device, "_cancel_tts_timer"):
+                device._cancel_tts_timer("before command")
 
             # 执行命令
             func = getattr(self.xiaomusic, opvalue)

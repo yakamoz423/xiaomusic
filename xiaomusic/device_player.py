@@ -501,10 +501,23 @@ class XiaoMusicDevice:
 
         self._prefetch_timer = asyncio.create_task(_do_prefetch())
 
+    def _cancel_tts_timer(self, reason: str = ""):
+        """取消 edge-tts 收尾定时器，避免误停正在播放的音乐。"""
+        if not self._tts_timer:
+            return
+        self._tts_timer.cancel()
+        self._tts_timer = None
+        self.log.info("cancel TTS timer%s", f" ({reason})" if reason else "")
+
+    def _is_ha_backend(self) -> bool:
+        return getattr(self.config, "playback_backend", "mina") == "ha"
+
     async def _playmusic(self, name):
         """播放音乐的核心实现"""
         # 取消组内所有的下一首歌曲的定时器
         await self.cancel_group_next_timer()
+        # 正式播歌前必须清掉 TTS stop 定时器，否则会把刚 play_media 的歌曲掐掉
+        self._cancel_tts_timer("before music play")
 
         self.is_playing = True
         self.device.cur_music = name
@@ -782,7 +795,14 @@ class XiaoMusicDevice:
         cmd = " ".join(sbp_args)
         self.log.info(f"download cmd: {cmd}")
         self._download_proc = await asyncio.create_subprocess_exec(*sbp_args)
-        await self.do_tts(f"正在下载歌曲{search_key}")
+        # HA 模式：口令匹配时已 force_stop 打断小爱原生回复；下载提示 TTS 可省略，
+        # 避免 edge-tts 的 stop 定时器与后续正式播歌打架。
+        if self._is_ha_backend():
+            self.log.info(
+                "HA mode: skip download TTS, downloading %s -> %s", search_key, name
+            )
+        else:
+            await self.do_tts(f"正在下载歌曲{search_key}")
         self.log.info(f"正在下载中 {search_key} {name}")
         await self._download_proc.wait()
         # 下载完成后，修改文件权限
@@ -932,10 +952,7 @@ class XiaoMusicDevice:
         self.log.info(f"_text_to_speech_edge_tts {value}")
         try:
             # 取消之前的 TTS 定时器
-            if self._tts_timer:
-                self._tts_timer.cancel()
-                self._tts_timer = None
-                self.log.info("已取消之前的 TTS 定时器")
+            self._cancel_tts_timer("new TTS")
 
             # 使用 edge-tts 生成 MP3 文件
             self.log.info(
@@ -959,30 +976,38 @@ class XiaoMusicDevice:
             duration = await get_local_music_duration(mp3_path, self.config)
             self.log.info(f"TTS 音频时长: {duration} 秒")
 
-            # 创建定时器，时长到后停止
-            if duration > 0:
+            if duration <= 0:
+                return
 
-                async def _tts_timeout():
-                    # 增加2秒，确保小爱音箱缓存完毕后，触发后续stop
-                    await asyncio.sleep(duration + 2)
-                    try:
-                        self.log.info("TTS 播放定时器时间到")
-                        current_timer = self._tts_timer
-                        if current_timer:
-                            # 取消任务（防止任务被重复触发，即使sleep已结束）
-                            current_timer.cancel()
-                            try:
-                                await current_timer  # 等待任务取消完成，避免警告
-                            except asyncio.CancelledError:
-                                pass
-                            # 再置空引用
-                            self._tts_timer = None
-                            await self.stop(arg1="notts")
-                    except Exception as e:
-                        self.log.error(f"TTS 定时器异常: {e}")
+            # HA 模式：同步等 TTS 播完即可，不要异步 stop（会误杀后续正式歌曲）。
+            if self._is_ha_backend():
+                wait_sec = min(duration + 0.3, 8.0)
+                self.log.info("HA mode: await TTS %.2fs (no stop timer)", wait_sec)
+                await asyncio.sleep(wait_sec)
+                return
 
-                self._tts_timer = asyncio.create_task(_tts_timeout())
-                self.log.info(f"已设置 TTS 定时器，{duration} 秒后停止")
+            # MiNA 模式：创建定时器，时长到后停止
+            async def _tts_timeout():
+                # 增加2秒，确保小爱音箱缓存完毕后，触发后续stop
+                await asyncio.sleep(duration + 2)
+                try:
+                    self.log.info("TTS 播放定时器时间到")
+                    current_timer = self._tts_timer
+                    if current_timer:
+                        # 取消任务（防止任务被重复触发，即使sleep已结束）
+                        current_timer.cancel()
+                        try:
+                            await current_timer  # 等待任务取消完成，避免警告
+                        except asyncio.CancelledError:
+                            pass
+                        # 再置空引用
+                        self._tts_timer = None
+                        await self.stop(arg1="notts")
+                except Exception as e:
+                    self.log.error(f"TTS 定时器异常: {e}")
+
+            self._tts_timer = asyncio.create_task(_tts_timeout())
+            self.log.info(f"已设置 TTS 定时器，{duration} 秒后停止")
 
         except Exception as e:
             self.log.exception(f"edge-tts 播放失败: {e}")
