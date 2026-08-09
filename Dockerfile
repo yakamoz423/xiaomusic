@@ -55,11 +55,10 @@ RUN pip install -U pdm
 ENV PDM_CHECK_UPDATE=false
 
 WORKDIR /app
-COPY pyproject.toml README.md package.json ./
+COPY pyproject.toml README.md ./
 
 # 安装Python和Node.js依赖
 RUN pdm install --prod --no-editable -v
-RUN npm install --loglevel=verbose
 
 # 复制应用代码
 COPY xiaomusic/ ./xiaomusic/

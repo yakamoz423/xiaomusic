@@ -17,14 +17,13 @@ XiaoAI voice
 
 ## Install
 
-1. In Home Assistant: **Settings → Add-ons → Add-on store → ⋮ → Repositories**
-2. Add `https://github.com/yakamoz423/xiaomusic` (or your fork URL)
-3. Refresh the store, install **XiaoMusic**
+1. **Settings → Add-ons → Add-on store → ⋮ → Repositories**
+2. Add `https://github.com/yakamoz423/xiaomusic`
+3. Refresh, install **XiaoMusic**
 4. Set `conversation_entity` (required) and optional `media_player`, then start
 
-The add-on folder is top-level `ha_xiaomusic/` (HA only scans top-level folders for `config.yaml`).
-Prebuilt images: `ghcr.io/yakamoz423/{arch}-xiaomusic`.
-
+Add-on folder: top-level `ha_xiaomusic/`.  
+Images: `ghcr.io/yakamoz423/{arch}-xiaomusic`.
 
 ## Configuration
 
@@ -39,18 +38,16 @@ Prebuilt images: `ghcr.io/yakamoz423/{arch}-xiaomusic`.
 | `search_prefix` | no | Default `bilisearch:` |
 | `verbose` | no | Debug logs |
 
-Permissions used: `hassio_api`, `homeassistant_api`, `host_network`,
-`media:rw`, `addon_config:rw`.
+Permissions: `hassio_api`, `homeassistant_api`, `host_network`, `media:rw`, `addon_config:rw`.
 
 ## Acceptance checks
 
-1. Say 「播放歌曲xxx」 to XiaoAI → add-on log shows match + yt-dlp.
+1. Say 「播放歌曲xxx」 → add-on log shows match + yt-dlp.
 2. After download, `play_media` points at `http://<lan-ip>:8090/music/...` and audio plays.
 3. 「下一首 / 停止」 work through the HA backend.
 4. Add-on options do **not** ask for Xiaomi account/password.
 
 ## Notes
 
-- Music files are stored under `/media/xiaomusic` when the media share is mapped.
+- Music files go under `/media/xiaomusic` when the media share is mapped.
 - Web UI / Ingress is on port `8090`.
-- Prebuilt images: `ghcr.io/yakamoz423/{arch}-xiaomusic`.
