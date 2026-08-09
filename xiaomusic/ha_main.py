@@ -120,9 +120,10 @@ async def async_main() -> None:
     config = build_config_from_options(options)
 
     # Import HTTP stack after config paths exist.
+    import uvicorn
+
     from xiaomusic.api import HttpInit
     from xiaomusic.api import app as HttpApp
-    import uvicorn
 
     xiaomusic = XiaoMusic(config)
     # Setting.json must not drop HA mode / virtual device.

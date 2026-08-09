@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import aiohttp
@@ -16,7 +16,7 @@ DEFAULT_MEDIA_CONTENT_TYPE = "music"
 log = logging.getLogger("xiaomusic.ha_player")
 
 
-def get_supervisor_token() -> Optional[str]:
+def get_supervisor_token() -> str | None:
     return os.environ.get("SUPERVISOR_TOKEN")
 
 
@@ -53,15 +53,15 @@ class HaPlayer:
         self,
         media_player: str = "",
         media_content_type: str = DEFAULT_MEDIA_CONTENT_TYPE,
-        session: Optional[aiohttp.ClientSession] = None,
-        logger: Optional[logging.Logger] = None,
+        session: aiohttp.ClientSession | None = None,
+        logger: logging.Logger | None = None,
     ):
         self.media_player = (media_player or "").strip()
         self.media_content_type = media_content_type or DEFAULT_MEDIA_CONTENT_TYPE
         self._session = session
         self._owns_session = session is None
         self.log = logger or log
-        self._resolved_entity: Optional[str] = None
+        self._resolved_entity: str | None = None
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -86,7 +86,7 @@ class HaPlayer:
         self,
         method: str,
         path: str,
-        json_body: Optional[dict[str, Any]] = None,
+        json_body: dict[str, Any] | None = None,
     ) -> tuple[bool, Any]:
         session = await self._ensure_session()
         url = f"{HA_API_URL.rstrip('/')}/{path.lstrip('/')}"
@@ -110,7 +110,9 @@ class HaPlayer:
         except Exception as exc:
             return False, str(exc)
 
-    async def call_service(self, service: str, data: dict[str, Any]) -> tuple[bool, Any]:
+    async def call_service(
+        self, service: str, data: dict[str, Any]
+    ) -> tuple[bool, Any]:
         return await self._request("POST", f"services/{service}", data)
 
     async def get_states(self) -> list[dict[str, Any]]:
@@ -129,9 +131,7 @@ class HaPlayer:
 
         states = await self.get_states()
         players = [
-            s
-            for s in states
-            if str(s.get("entity_id", "")).startswith("media_player.")
+            s for s in states if str(s.get("entity_id", "")).startswith("media_player.")
         ]
 
         def score(entity: dict[str, Any]) -> tuple[int, str]:
@@ -155,7 +155,7 @@ class HaPlayer:
         self.log.info("Auto-selected media_player: %s", self._resolved_entity)
         return self._resolved_entity
 
-    async def play_url(self, url: str, entity_id: Optional[str] = None) -> bool:
+    async def play_url(self, url: str, entity_id: str | None = None) -> bool:
         entity = entity_id or await self.resolve_media_player()
         # music_library may return host:port without scheme
         if url and not url.startswith(("http://", "https://")):
@@ -175,7 +175,7 @@ class HaPlayer:
             self.log.error("play_media failed: %s", detail)
         return ok
 
-    async def stop(self, entity_id: Optional[str] = None) -> bool:
+    async def stop(self, entity_id: str | None = None) -> bool:
         """Stop with Xiaomi-friendly fallbacks (media_stop often 500s)."""
         entity = entity_id or await self.resolve_media_player()
         payload = {"entity_id": entity}

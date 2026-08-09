@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import aiohttp
 
@@ -24,8 +25,8 @@ class HaConversationPoller:
         conversation_entity: str,
         did: str,
         poll_interval_seconds: float = 1.0,
-        session: Optional[aiohttp.ClientSession] = None,
-        logger: Optional[logging.Logger] = None,
+        session: aiohttp.ClientSession | None = None,
+        logger: logging.Logger | None = None,
     ):
         self.conversation_entity = (conversation_entity or "").strip()
         self.did = did
@@ -33,7 +34,7 @@ class HaConversationPoller:
         self._session = session
         self._owns_session = session is None
         self.log = logger or log
-        self._last_fingerprint: Optional[str] = None
+        self._last_fingerprint: str | None = None
         self._last_query: str = ""
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
@@ -59,7 +60,7 @@ class HaConversationPoller:
         self,
         method: str,
         path: str,
-        json_body: Optional[dict[str, Any]] = None,
+        json_body: dict[str, Any] | None = None,
     ) -> tuple[bool, Any]:
         session = await self._ensure_session()
         url = f"{HA_API_URL.rstrip('/')}/{path.lstrip('/')}"
@@ -92,14 +93,10 @@ class HaConversationPoller:
         if not ok:
             self.log.debug("update_entity failed: %s", detail)
 
-    async def fetch_state(self) -> Optional[dict[str, Any]]:
-        ok, data = await self._request(
-            "GET", f"states/{self.conversation_entity}"
-        )
+    async def fetch_state(self) -> dict[str, Any] | None:
+        ok, data = await self._request("GET", f"states/{self.conversation_entity}")
         if not ok or not isinstance(data, dict):
-            self.log.warning(
-                "Failed to read %s: %s", self.conversation_entity, data
-            )
+            self.log.warning("Failed to read %s: %s", self.conversation_entity, data)
             return None
         return data
 
@@ -133,7 +130,7 @@ class HaConversationPoller:
     async def run_loop(
         self,
         on_query: OnQueryCallback,
-        reset_timer: Optional[OnQueryCallback] = None,
+        reset_timer: OnQueryCallback | None = None,
     ) -> None:
         if not self.conversation_entity:
             raise RuntimeError("conversation_entity is required")
