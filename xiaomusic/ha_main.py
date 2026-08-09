@@ -40,9 +40,8 @@ def _ensure_dirs(*paths: str) -> None:
             os.makedirs(path, exist_ok=True)
 
 
-def build_config_from_options(options: dict[str, Any]) -> Config:
-    """Merge add-on options into a Config suitable for HA-only mode."""
-    config = Config()
+def apply_ha_options(config: Config, options: dict[str, Any]) -> None:
+    """Apply / re-apply add-on options onto Config (after setting.json load)."""
     config.playback_backend = "ha"
     config.verbose = bool(options.get("verbose", False))
     config.disable_download = bool(options.get("disable_download", False))
@@ -89,12 +88,19 @@ def build_config_from_options(options: dict[str, Any]) -> Config:
         )
     }
 
-    # Optional prefix hint (defaults already cover play keywords).
+    # command_prefixes maps to keywords_play (comma-separated).
+    # Put custom prefixes first so short ones like「播放」beat longer defaults.
     prefixes = str(options.get("command_prefixes") or "").strip()
     if prefixes:
         config.keywords_play = prefixes
+        config.init()
+        # Ensure custom play keys are tried early in fuzzy match order.
+        custom = [k for k in prefixes.split(",") if k]
+        rest = [k for k in config.key_match_order if k not in custom]
+        config.key_match_order = custom + rest
+    else:
+        config.init()
 
-    config.init()
     _ensure_dirs(
         config.music_path,
         config.download_path,
@@ -102,6 +108,12 @@ def build_config_from_options(options: dict[str, Any]) -> Config:
         config.cache_dir,
         config.conf_path,
     )
+
+
+def build_config_from_options(options: dict[str, Any]) -> Config:
+    """Merge add-on options into a Config suitable for HA-only mode."""
+    config = Config()
+    apply_ha_options(config, options)
     return config
 
 
@@ -126,17 +138,17 @@ async def async_main() -> None:
     from xiaomusic.api import app as HttpApp
 
     xiaomusic = XiaoMusic(config)
-    # Setting.json must not drop HA mode / virtual device.
-    xiaomusic.config.playback_backend = "ha"
-    if HA_DID not in xiaomusic.config.devices:
-        xiaomusic.config.devices[HA_DID] = Device(
-            did=HA_DID,
-            device_id=HA_DEVICE_ID,
-            hardware="HA",
-            name="HA Speaker",
-        )
-    xiaomusic.config.mi_did = HA_DID
+    # setting.json may overwrite keywords_* / devices — re-apply add-on options.
+    apply_ha_options(xiaomusic.config, options)
     xiaomusic.device_manager._update_devices()
+    xiaomusic.log.info(
+        "HA options applied: keywords_play=%r search_prefix=%r "
+        "disable_download=%s key_match_order_head=%s",
+        xiaomusic.config.keywords_play,
+        xiaomusic.config.search_prefix,
+        xiaomusic.config.disable_download,
+        xiaomusic.config.key_match_order[:8],
+    )
 
     ha_player = HaPlayer(
         media_player=media_player,
@@ -162,8 +174,8 @@ async def async_main() -> None:
     uvicorn_config = uvicorn.Config(
         HttpApp,
         host="0.0.0.0",
-        port=int(config.port),
-        log_level="debug" if config.verbose else "info",
+        port=int(xiaomusic.config.port),
+        log_level="debug" if xiaomusic.config.verbose else "info",
     )
     server = uvicorn.Server(uvicorn_config)
 
@@ -183,8 +195,8 @@ async def async_main() -> None:
         "XiaoMusic HA mode: conversation=%s media_player=%s music_url=%s:%s",
         conversation_entity,
         media_player or "(auto)",
-        config.hostname,
-        config.public_port,
+        xiaomusic.config.hostname,
+        xiaomusic.config.public_port,
     )
     await server.serve()
     await ha_player.close()
