@@ -1,0 +1,194 @@
+"""Home Assistant Supervisor API helpers for media_player playback."""
+
+from __future__ import annotations
+
+import logging
+import os
+import socket
+from typing import Any, Optional
+from urllib.parse import urlparse
+
+import aiohttp
+
+HA_API_URL = os.environ.get("HA_API_URL", "http://supervisor/core/api")
+DEFAULT_MEDIA_CONTENT_TYPE = "music"
+
+log = logging.getLogger("xiaomusic.ha_player")
+
+
+def get_supervisor_token() -> Optional[str]:
+    return os.environ.get("SUPERVISOR_TOKEN")
+
+
+def get_local_ip() -> str:
+    """Best-effort LAN IP via UDP connect (no packets sent)."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        sock.close()
+
+
+def parse_music_public_base(base: str, default_port: int) -> tuple[str, int]:
+    """Split music_public_base into (hostname_with_scheme, public_port)."""
+    base = (base or "").strip().rstrip("/")
+    if not base:
+        return f"http://{get_local_ip()}", default_port
+    if "://" not in base:
+        base = f"http://{base}"
+    parsed = urlparse(base)
+    scheme = parsed.scheme or "http"
+    host = parsed.hostname or get_local_ip()
+    port = parsed.port or default_port
+    return f"{scheme}://{host}", port
+
+
+class HaPlayer:
+    """Play / stop via Home Assistant media_player services."""
+
+    def __init__(
+        self,
+        media_player: str = "",
+        media_content_type: str = DEFAULT_MEDIA_CONTENT_TYPE,
+        session: Optional[aiohttp.ClientSession] = None,
+        logger: Optional[logging.Logger] = None,
+    ):
+        self.media_player = (media_player or "").strip()
+        self.media_content_type = media_content_type or DEFAULT_MEDIA_CONTENT_TYPE
+        self._session = session
+        self._owns_session = session is None
+        self.log = logger or log
+        self._resolved_entity: Optional[str] = None
+
+    async def _ensure_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+            self._owns_session = True
+        return self._session
+
+    async def close(self) -> None:
+        if self._owns_session and self._session and not self._session.closed:
+            await self._session.close()
+
+    def _headers(self) -> dict[str, str]:
+        token = get_supervisor_token()
+        if not token:
+            raise RuntimeError("SUPERVISOR_TOKEN missing")
+        return {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        json_body: Optional[dict[str, Any]] = None,
+    ) -> tuple[bool, Any]:
+        session = await self._ensure_session()
+        url = f"{HA_API_URL.rstrip('/')}/{path.lstrip('/')}"
+        try:
+            async with session.request(
+                method,
+                url,
+                headers=self._headers(),
+                json=json_body,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                text = await resp.text()
+                if resp.status >= 400:
+                    return False, f"HTTP {resp.status}: {text[:300]}"
+                if not text:
+                    return True, None
+                try:
+                    return True, await resp.json(content_type=None)
+                except Exception:
+                    return True, text
+        except Exception as exc:
+            return False, str(exc)
+
+    async def call_service(self, service: str, data: dict[str, Any]) -> tuple[bool, Any]:
+        return await self._request("POST", f"services/{service}", data)
+
+    async def get_states(self) -> list[dict[str, Any]]:
+        ok, data = await self._request("GET", "states")
+        if not ok or not isinstance(data, list):
+            self.log.warning("get_states failed: %s", data)
+            return []
+        return data
+
+    async def resolve_media_player(self) -> str:
+        if self.media_player and self.media_player.lower() not in ("", "auto"):
+            self._resolved_entity = self.media_player
+            return self.media_player
+        if self._resolved_entity:
+            return self._resolved_entity
+
+        states = await self.get_states()
+        players = [
+            s
+            for s in states
+            if str(s.get("entity_id", "")).startswith("media_player.")
+        ]
+
+        def score(entity: dict[str, Any]) -> tuple[int, str]:
+            eid = entity.get("entity_id", "")
+            attrs = entity.get("attributes") or {}
+            name = str(attrs.get("friendly_name") or "")
+            hay = f"{eid} {name}".lower()
+            pts = 0
+            if "xiaoai" in hay or "xiaomi" in hay or "小爱" in hay:
+                pts += 100
+            if "play_control" in hay:
+                pts += 50
+            if entity.get("state") not in ("unavailable", "unknown"):
+                pts += 10
+            return (-pts, eid)
+
+        players.sort(key=score)
+        if not players:
+            raise RuntimeError("No media_player.* entity found")
+        self._resolved_entity = players[0]["entity_id"]
+        self.log.info("Auto-selected media_player: %s", self._resolved_entity)
+        return self._resolved_entity
+
+    async def play_url(self, url: str, entity_id: Optional[str] = None) -> bool:
+        entity = entity_id or await self.resolve_media_player()
+        # music_library may return host:port without scheme
+        if url and not url.startswith(("http://", "https://")):
+            url = f"http://{url}" if "://" not in url else url
+        self.log.info("play_media %s <- %s", entity, url)
+        ok, detail = await self.call_service(
+            "media_player/play_media",
+            {
+                "entity_id": entity,
+                "media_content_id": url,
+                "media_content_type": self.media_content_type,
+            },
+        )
+        if ok:
+            self.log.info("play_media accepted (%s)", detail)
+        else:
+            self.log.error("play_media failed: %s", detail)
+        return ok
+
+    async def stop(self, entity_id: Optional[str] = None) -> bool:
+        """Stop with Xiaomi-friendly fallbacks (media_stop often 500s)."""
+        entity = entity_id or await self.resolve_media_player()
+        payload = {"entity_id": entity}
+        attempts = (
+            "media_player/media_stop",
+            "media_player/media_pause",
+            "media_player/turn_off",
+        )
+        for service in attempts:
+            ok, detail = await self.call_service(service, payload)
+            if ok:
+                self.log.info("stop via %s (%s)", service, detail)
+                return True
+            self.log.warning("stop via %s failed: %s", service, detail)
+        self.log.warning("could not stop media_player (ignored)")
+        return False

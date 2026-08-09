@@ -1,0 +1,6 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+readonly exit_code_service="${1}"
+bashio::log.warning "XiaoMusic exited with code ${exit_code_service}"
+# Restart the service (non-zero tells s6 to restart longrun)
+exit "${exit_code_service}"

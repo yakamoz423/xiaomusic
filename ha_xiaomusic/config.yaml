@@ -1,0 +1,45 @@
+---
+name: XiaoMusic
+version: "0.1.0"
+slug: xiaomusic
+description: >-
+  Play music on XiaoAI via Home Assistant conversation sensor + yt-dlp
+  (no Xiaomi account required in add-on mode).
+url: https://github.com/yakamoz423/xiaomusic
+image: "ghcr.io/yakamoz423/{arch}-xiaomusic"
+startup: services
+init: false
+arch:
+  - aarch64
+  - amd64
+hassio_api: true
+homeassistant_api: true
+host_network: true
+ingress: true
+ingress_port: 8090
+panel_icon: mdi:music
+map:
+  - media:rw
+  - addon_config:rw
+ports:
+  8090/tcp: 8090
+ports_description:
+  8090/tcp: XiaoMusic HTTP (music files + web UI)
+options:
+  conversation_entity: ""
+  media_player: ""
+  command_prefixes: "播放歌曲,放歌曲,播放本地歌曲,本地播放歌曲"
+  poll_interval_seconds: 1.0
+  music_public_base: ""
+  disable_download: false
+  search_prefix: "bilisearch:"
+  verbose: false
+schema:
+  conversation_entity: str
+  media_player: str?
+  command_prefixes: str?
+  poll_interval_seconds: float?
+  music_public_base: str?
+  disable_download: bool?
+  search_prefix: str?
+  verbose: bool?

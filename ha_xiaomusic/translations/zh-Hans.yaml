@@ -1,0 +1,34 @@
+---
+configuration:
+  conversation_entity:
+    name: 对话传感器
+    description: >-
+      必填。小米 MIOT conversation 传感器实体 ID，例如
+      sensor.xiaomi_l05c_xxxx_conversation。
+  media_player:
+    name: 目标媒体播放器
+    description: >-
+      可选。留空则自动选择（优先小爱 / 小米音箱）。
+      也可手动填写 media_player.* 实体 ID。
+  command_prefixes:
+    name: 口令前缀
+    description: >-
+      逗号分隔的语音口令前缀（与内置「播放歌曲」等关键词对齐）。
+  poll_interval_seconds:
+    name: 轮询间隔（秒）
+    description: >-
+      调用 homeassistant.update_entity 并检查新对话的间隔。
+  music_public_base:
+    name: 音乐公网/局域网基址
+    description: >-
+      可选。音箱可访问的基址，例如 http://192.168.1.10:8090。
+      留空则自动探测局域网 IP + 插件端口。
+  disable_download:
+    name: 禁用下载
+    description: 开启后只播放已下载 / 本地音乐。
+  search_prefix:
+    name: yt-dlp 搜索前缀
+    description: 例如 bilisearch: 或 ytsearch:
+  verbose:
+    name: 详细日志
+    description: 启用调试日志。

@@ -1,0 +1,9 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# ==============================================================================
+# XiaoMusic HA conversation → yt-dlp → media_player bridge
+# ==============================================================================
+
+bashio::log.info 'Starting XiaoMusic (HA playback backend)...'
+cd /app || exit 1
+exec /app/.venv/bin/python3 /usr/bin/xiaomusic-ha.py

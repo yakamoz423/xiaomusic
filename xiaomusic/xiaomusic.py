@@ -69,6 +69,10 @@ class XiaoMusic:
         # 初始化对话轮询器（延迟初始化，在配置和服务准备好之后）
         self.conversation_poller = None
 
+        # HA 模式桥接（仅 playback_backend=ha 时使用）
+        self.ha_player = None
+        self.ha_conversation = None
+
         # 初始化日志
         self.setup_logger()
 
@@ -261,6 +265,34 @@ class XiaoMusic:
         assert (
             analytics_task is not None
         )  # to keep the reference to task, do not remove this
+
+        if getattr(self.config, "playback_backend", "mina") == "ha":
+            # HA add-on mode: no Xiaomi login; conversation + play via Supervisor API.
+            if not self.config.devices:
+                from xiaomusic.config import Device
+
+                self.config.mi_did = self.config.mi_did or "ha"
+                self.config.devices = {
+                    self.config.mi_did: Device(
+                        did=self.config.mi_did,
+                        device_id="HA-DEVICE",
+                        hardware="HA",
+                        name="HA Speaker",
+                    )
+                }
+            self.device_manager._update_devices()
+            self.log.info(
+                "HA playback backend active; skipping MiNA login. devices=%s",
+                list(self.config.devices.keys()),
+            )
+            if self.ha_conversation is None:
+                self.log.error("ha_conversation is not configured")
+                return
+            await self.ha_conversation.run_loop(
+                self.do_check_cmd, self.reset_timer_when_answer
+            )
+            return
+
         await self.auth_manager.init_all_data()
         # 启动对话循环，传递回调函数
         await self.conversation_poller.run_conversation_loop(

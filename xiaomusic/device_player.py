@@ -693,6 +693,13 @@ class XiaoMusicDevice:
     async def force_stop_xiaoai(self, device_id):
         """强制停止小爱播放"""
         try:
+            if getattr(self.config, "playback_backend", "mina") == "ha":
+                ha_player = getattr(self.xiaomusic, "ha_player", None)
+                if ha_player is not None:
+                    await ha_player.stop()
+                else:
+                    self.log.warning("playback_backend=ha but ha_player is missing")
+                return
             ret = await self.auth_manager.mina_service.player_pause(device_id)
             self.log.info(
                 f"force_stop_xiaoai player_pause device_id:{device_id} ret:{ret}"
@@ -888,6 +895,12 @@ class XiaoMusicDevice:
             # 检查设置中是否启用了语音TTS。如果是关闭，直接退出，避免后续走到小米TTS，导致token失效
             if self.config.edge_tts_voice == "disable":
                 return
+            # HA 模式：只用 edge-tts，避免走 MiNA/MiIO
+            if getattr(self.config, "playback_backend", "mina") == "ha":
+                if not self.config.edge_tts_voice:
+                    self.config.edge_tts_voice = "zh-CN-XiaoyiNeural"
+                await self._text_to_speech_edge_tts(value)
+                return
             # 检查是否配置了 edge-tts 语音角色
             elif self.config.edge_tts_voice:
                 await self._text_to_speech_edge_tts(value)
@@ -990,6 +1003,17 @@ class XiaoMusicDevice:
         """在单个设备上播放URL"""
         ret = None
         try:
+            if getattr(self.config, "playback_backend", "mina") == "ha":
+                ha_player = getattr(self.xiaomusic, "ha_player", None)
+                if ha_player is None:
+                    self.log.error("playback_backend=ha but ha_player is missing")
+                    return False
+                ret = await ha_player.play_url(url)
+                self.log.info(
+                    f"play_one_url ha_player device_id:{device_id} ret:{ret} url:{url} name:{name}"
+                )
+                return ret
+
             audio_id = await self._get_audio_id(name)
             if self.config.continue_play:
                 ret = await self.auth_manager.mina_service.play_by_music_url(

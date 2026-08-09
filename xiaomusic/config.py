@@ -90,6 +90,8 @@ class Config:
     password: str = os.getenv("MI_PASS", "")
     mi_did: str = os.getenv("MI_DID", "")  # 逗号分割支持多设备
     cookie: str = ""
+    # Playback backend: "mina" (Xiaomi MiNA) or "ha" (Home Assistant play_media)
+    playback_backend: str = os.getenv("XIAOMUSIC_PLAYBACK_BACKEND", "mina")
     verbose: bool = os.getenv("XIAOMUSIC_VERBOSE", "").lower() == "true"
     music_path: str = os.getenv("XIAOMUSIC_MUSIC_PATH", "music")
     temp_path: str = os.getenv("XIAOMUSIC_TEMP_PATH", "music/tmp")

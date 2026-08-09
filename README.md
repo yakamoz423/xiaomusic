@@ -37,6 +37,16 @@
 > [!TIP]
 > **新手指南**：初次安装遇到问题请查阅 [💬 FAQ问题集合](https://github.com/hanxi/xiaomusic/issues/99)，一般遇到的问题都已经有解决办法。
 
+## 🏠 Home Assistant OS 插件（本 fork）
+
+本 fork 提供 **HAOS Addon**：通过 `hass_xiaomi_miot` 的 conversation 传感器接收口令，yt-dlp 下歌后用 `media_player.play_media` 播放，**无需填写小米账号**。
+
+1. HA：**设置 → 插件 → 插件商店 → ⋮ → 仓库**，添加 `https://github.com/yakamoz423/xiaomusic`
+2. 安装 **XiaoMusic**，填写 `conversation_entity`（及可选 `media_player`）后启动
+3. 详细说明见 [`ha_xiaomusic/DOCS.md`](ha_xiaomusic/DOCS.md)
+
+镜像：`ghcr.io/yakamoz423/{arch}-xiaomusic`（由 GitHub Actions 构建）。
+
 ## 👋 快速入门指南
 
 已经支持在 web 设置页面配置其他参数，不再需要设置环境变量， docker compose 配置如下（选一个即可）：
