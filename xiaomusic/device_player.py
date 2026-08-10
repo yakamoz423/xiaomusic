@@ -614,8 +614,13 @@ class XiaoMusicDevice:
                 return
 
         # 4. 真正安全的下发播放阶段
-        # HA 模式口令入口已 force_stop；播前再 pause 容易和 play_media 打架且保持静音。
-        if not self._is_ha_backend():
+        if self._is_ha_backend():
+            # Download/match may take time; XiaoAI may have started music again — one more stop.
+            ha_player = getattr(self.xiaomusic, "ha_player", None)
+            if ha_player is not None:
+                self.log.info("HA: stop once more before our play_media")
+                await ha_player.stop()
+        else:
             await self.group_force_stop_xiaoai()
         self.log.info(f"发送指令给小爱，开始播放: {url}")
 
@@ -624,6 +629,9 @@ class XiaoMusicDevice:
             self._play_failed_cnt = getattr(self, "_play_failed_cnt", 0) + 1
             self.log.info(f"播放指令发送失败. 连续失败次数: {self._play_failed_cnt}")
             await asyncio.sleep(1)
+            if self._is_ha_backend():
+                self.log.info("HA mode: play once only, not advancing on failure")
+                return
             if (
                 self.is_playing
                 and self._last_cmd != "stop"
@@ -666,12 +674,24 @@ class XiaoMusicDevice:
                             self.did, "连续多次获取歌曲失败，已为您停止播放。"
                         )
                     )
+                elif self._is_ha_backend():
+                    self.log.info("HA mode: play once only, not skipping to next")
                 else:
                     await self.set_next_music_timeout(0.5)
             return
 
         # 只有通过了 404 探路存活 -> 发送指令成功 -> 质检测出时长正常，才允许重置清零！
         self._play_failed_cnt = 0
+
+        if self._is_ha_backend():
+            # 只播当前这一首，不续播 / 不预缓存下一首
+            await self.cancel_next_timer()
+            self.log.info(
+                "HA mode: play once only (duration=%.1fs), no auto-next", sec
+            )
+            if self.event_bus:
+                self.event_bus.publish(DEVICE_CONFIG_CHANGED)
+            return
 
         # 计算自动添加歌曲的延迟时间
         if sec > 30:
@@ -728,7 +748,8 @@ class XiaoMusicDevice:
             if getattr(self.config, "playback_backend", "mina") == "ha":
                 ha_player = getattr(self.xiaomusic, "ha_player", None)
                 if ha_player is not None:
-                    await ha_player.stop()
+                    # TTS stop → wait → stop XiaoAI's own song
+                    await ha_player.interrupt_xiaoai_reply()
                 else:
                     self.log.warning("playback_backend=ha but ha_player is missing")
                 return

@@ -13,6 +13,8 @@ import aiohttp
 
 HA_API_URL = os.environ.get("HA_API_URL", "http://supervisor/core/api")
 DEFAULT_MEDIA_CONTENT_TYPE = "music"
+# After stopping XiaoAI TTS, wait for it to start its own track, then stop again.
+HA_INTERRUPT_GAP_SEC = float(os.environ.get("XIAOMUSIC_HA_INTERRUPT_GAP", "2.0"))
 
 log = logging.getLogger("xiaomusic.ha_player")
 
@@ -162,6 +164,39 @@ class HaPlayer:
         self.log.info("Auto-selected media_player: %s", self._resolved_entity)
         return self._resolved_entity
 
+    async def stop(self, entity_id: str | None = None) -> bool:
+        """Stop XiaoAI playback. Prefer media_stop; fall back to pause (stop often 500s)."""
+        entity = entity_id or await self.resolve_media_player()
+        payload = {"entity_id": entity}
+        attempts = (
+            "media_player/media_stop",
+            "media_player/media_pause",
+            "media_player/turn_off",
+        )
+        for service in attempts:
+            ok, detail = await self.call_service(service, payload)
+            if ok:
+                self.log.info("stop via %s (%s)", service, detail)
+                return True
+            self.log.warning("stop via %s failed: %s", service, detail)
+        self.log.warning("could not stop media_player (ignored)")
+        return False
+
+    async def interrupt_xiaoai_reply(self, gap_sec: float | None = None) -> None:
+        """Stop XiaoAI TTS, wait for it to start its own track, stop that too.
+
+        Flow:
+          voice command → XiaoAI TTS → (we stop) → XiaoAI own song → (we stop)
+          → then addon may play TTS / downloaded music.
+        """
+        gap = HA_INTERRUPT_GAP_SEC if gap_sec is None else max(0.2, float(gap_sec))
+        self.log.info("HA interrupt #1: stop XiaoAI TTS/reply")
+        await self.stop()
+        self.log.info("HA interrupt: wait %.1fs for XiaoAI to start its own track", gap)
+        await asyncio.sleep(gap)
+        self.log.info("HA interrupt #2: stop XiaoAI own music")
+        await self.stop()
+
     async def play_url(self, url: str, entity_id: str | None = None) -> bool:
         entity = entity_id or await self.resolve_media_player()
         # music_library may return host:port without scheme
@@ -173,9 +208,7 @@ class HaPlayer:
             self.log.error("refuse play_media with empty/invalid url: %r", url)
             return False
 
-        # xiaomi_miot: type "music"/"mp3"/... → async_play_music (placeholder audio_id);
-        # other types (e.g. "1") → player_play_url which works better on some L05C.
-        # Try play_url path first, then configured/music fallback.
+        # Prefer player_play_url path (type "1"); fall back to music.
         content_types: list[str] = []
         for candidate in ("1", self.media_content_type, "music"):
             c = str(candidate or "").strip()
@@ -203,7 +236,6 @@ class HaPlayer:
             state = await self.get_state(entity)
             title = ""
             content_id = ""
-            ha_state = ""
             if state:
                 attrs = (
                     state.get("attributes")
@@ -212,19 +244,15 @@ class HaPlayer:
                 )
                 title = str(attrs.get("media_title") or "")
                 content_id = str(attrs.get("media_content_id") or "")
-                ha_state = str(state.get("state") or "")
                 self.log.info(
                     "post-play type=%s state=%s vol=%s content_id=%s title=%s",
                     ctype,
-                    ha_state,
+                    state.get("state"),
                     attrs.get("volume_level"),
                     content_id,
                     title,
                 )
-            # If still stuck on XiaoAI hold music, try next content type.
-            if title.startswith("请欣赏") or content_id in (
-                "2838397602828911155",
-            ):
+            if title.startswith("请欣赏") or content_id == "2838397602828911155":
                 self.log.warning(
                     "play_media type=%s did not take over (still 请欣赏/hold); try next",
                     ctype,
@@ -233,21 +261,3 @@ class HaPlayer:
             return True
 
         return last_ok
-
-    async def stop(self, entity_id: str | None = None) -> bool:
-        """Optional interrupt. Prefer pause; media_stop often 500s on MIOT."""
-        entity = entity_id or await self.resolve_media_player()
-        payload = {"entity_id": entity}
-        attempts = (
-            "media_player/media_pause",
-            "media_player/media_stop",
-            "media_player/turn_off",
-        )
-        for service in attempts:
-            ok, detail = await self.call_service(service, payload)
-            if ok:
-                self.log.info("stop via %s (%s)", service, detail)
-                return True
-            self.log.warning("stop via %s failed: %s", service, detail)
-        self.log.warning("could not stop media_player (ignored)")
-        return False

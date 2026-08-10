@@ -1,6 +1,6 @@
 ---
 name: XiaoMusic
-version: "0.1.12"
+version: "0.1.13"
 slug: xiaomusic
 description: >-
   Play music on XiaoAI via Home Assistant conversation sensor + yt-dlp
