@@ -173,48 +173,71 @@ class HaPlayer:
             self.log.error("refuse play_media with empty/invalid url: %r", url)
             return False
 
-        self.log.info("play_media %s <- %s", entity, url)
-        ok, detail = await self.call_service(
-            "media_player/play_media",
-            {
-                "entity_id": entity,
-                "media_content_id": url,
-                "media_content_type": self.media_content_type,
-            },
-        )
-        if not ok:
-            self.log.error("play_media failed: %s", detail)
-            return False
-        self.log.info("play_media accepted (%s)", detail)
+        # xiaomi_miot: type "music"/"mp3"/... → async_play_music (placeholder audio_id);
+        # other types (e.g. "1") → player_play_url which works better on some L05C.
+        # Try play_url path first, then configured/music fallback.
+        content_types: list[str] = []
+        for candidate in ("1", self.media_content_type, "music"):
+            c = str(candidate or "").strip()
+            if c and c not in content_types:
+                content_types.append(c)
 
-        play_ok, play_detail = await self.call_service(
-            "media_player/media_play",
-            {"entity_id": entity},
-        )
-        self.log.info("media_play after play_media: ok=%s detail=%s", play_ok, play_detail)
+        last_ok = False
+        for ctype in content_types:
+            self.log.info("play_media %s type=%s <- %s", entity, ctype, url)
+            ok, detail = await self.call_service(
+                "media_player/play_media",
+                {
+                    "entity_id": entity,
+                    "media_content_id": url,
+                    "media_content_type": ctype,
+                },
+            )
+            if not ok:
+                self.log.error("play_media type=%s failed: %s", ctype, detail)
+                continue
+            last_ok = True
+            self.log.info("play_media type=%s accepted (%s)", ctype, detail)
 
-        await asyncio.sleep(0.5)
-        state = await self.get_state(entity)
-        if state:
-            attrs = (
-                state.get("attributes")
-                if isinstance(state.get("attributes"), dict)
-                else {}
-            )
-            self.log.info(
-                "post-play state=%s vol=%s content_id=%s title=%s",
-                state.get("state"),
-                attrs.get("volume_level"),
-                attrs.get("media_content_id"),
-                attrs.get("media_title"),
-            )
-        return True
+            await asyncio.sleep(1.0)
+            state = await self.get_state(entity)
+            title = ""
+            content_id = ""
+            ha_state = ""
+            if state:
+                attrs = (
+                    state.get("attributes")
+                    if isinstance(state.get("attributes"), dict)
+                    else {}
+                )
+                title = str(attrs.get("media_title") or "")
+                content_id = str(attrs.get("media_content_id") or "")
+                ha_state = str(state.get("state") or "")
+                self.log.info(
+                    "post-play type=%s state=%s vol=%s content_id=%s title=%s",
+                    ctype,
+                    ha_state,
+                    attrs.get("volume_level"),
+                    content_id,
+                    title,
+                )
+            # If still stuck on XiaoAI hold music, try next content type.
+            if title.startswith("请欣赏") or content_id in (
+                "2838397602828911155",
+            ):
+                self.log.warning(
+                    "play_media type=%s did not take over (still 请欣赏/hold); try next",
+                    ctype,
+                )
+                continue
+            return True
+
+        return last_ok
 
     async def stop(self, entity_id: str | None = None) -> bool:
-        """Interrupt XiaoAI hold music. Prefer pause; media_stop often 500s on MIOT."""
+        """Optional interrupt. Prefer pause; media_stop often 500s on MIOT."""
         entity = entity_id or await self.resolve_media_player()
         payload = {"entity_id": entity}
-        # Prefer pause over stop — stop frequently 500s and is unnecessary before play_media.
         attempts = (
             "media_player/media_pause",
             "media_player/media_stop",

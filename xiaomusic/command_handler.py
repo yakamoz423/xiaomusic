@@ -64,7 +64,10 @@ class CommandHandler:
                 return
 
             # 执行命令前先停止小爱原生回复（"还不支持…"等），再走下载/播放。
-            await device.group_force_stop_xiaoai()
+            # HA 模式：不要 media_pause，改由后续 play_media(REPLACE) 直接接管；
+            # pause 常常停不掉「请欣赏」，还会把 URL 播放搞僵。
+            if getattr(self.xiaomusic.config, "playback_backend", "mina") != "ha":
+                await device.group_force_stop_xiaoai()
             if hasattr(device, "_cancel_tts_timer"):
                 device._cancel_tts_timer("before command")
 
