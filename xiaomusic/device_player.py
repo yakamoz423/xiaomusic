@@ -1167,6 +1167,9 @@ class XiaoMusicDevice:
 
     async def reset_timer_when_answer(self, answer_length):
         """重置计时器（当小爱回答时）"""
+        if self._is_ha_backend():
+            # HA: play-once — conversation poller must not re-arm next-song timer.
+            return
         if not (self.is_playing and self.config.continue_play):
             return
         pause_time = answer_length / 5 + 1
@@ -1180,6 +1183,10 @@ class XiaoMusicDevice:
 
     async def set_next_music_timeout(self, sec):
         """设置下一首歌曲的播放定时器"""
+        if self._is_ha_backend():
+            await self.cancel_next_timer()
+            self.log.info("HA mode: refuse next-timer (play once only)")
+            return
         await self.cancel_next_timer()
 
         async def _do_next():

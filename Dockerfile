@@ -57,7 +57,7 @@ ENV PDM_CHECK_UPDATE=false
 WORKDIR /app
 COPY pyproject.toml README.md ./
 
-# 安装Python和Node.js依赖
+# 安装 Python 依赖（HA fork 不再构建前端 npm 包）
 RUN pdm install --prod --no-editable -v
 
 # 复制应用代码

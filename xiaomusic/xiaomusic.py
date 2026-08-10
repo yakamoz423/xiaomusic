@@ -288,9 +288,8 @@ class XiaoMusic:
             if self.ha_conversation is None:
                 self.log.error("ha_conversation is not configured")
                 return
-            await self.ha_conversation.run_loop(
-                self.do_check_cmd, self.reset_timer_when_answer
-            )
+            # No reset_timer: that path re-arms "play next" and breaks play-once.
+            await self.ha_conversation.run_loop(self.do_check_cmd, None)
             return
 
         await self.auth_manager.init_all_data()

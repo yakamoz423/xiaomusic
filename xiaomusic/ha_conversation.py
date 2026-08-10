@@ -119,13 +119,17 @@ class HaConversationPoller:
 
     @staticmethod
     def fingerprint(state: dict[str, Any], query: str) -> str:
+        """Build a stable id for a conversation utterance.
+
+        Only use MIOT attribute timestamps — never HA entity last_changed /
+        last_updated. Those change every time we call update_entity() and would
+        re-fire the previous query after every add-on restart.
+        """
         attrs = state.get("attributes") or {}
         ts = (
             attrs.get("timestamp")
-            or attrs.get("last_changed")
             or attrs.get("time")
-            or state.get("last_changed")
-            or state.get("last_updated")
+            or attrs.get("last_changed")
             or ""
         )
         return f"{ts}|{query}"
@@ -172,7 +176,12 @@ class HaConversationPoller:
             self.did,
         )
 
-        # Prime fingerprint so we don't replay the last utterance on startup.
+        # Absorb one update_entity + prime fingerprint so we never treat the
+        # leftover MIOT conversation text as a brand-new command after restart.
+        try:
+            await self.update_entity()
+        except Exception as exc:  # noqa: BLE001
+            self.log.debug("startup update_entity failed: %s", exc)
         first = await self.fetch_state()
         if first:
             q0 = self.extract_query(first)

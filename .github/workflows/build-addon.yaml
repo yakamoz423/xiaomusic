@@ -1,6 +1,14 @@
 ---
 name: Build XiaoMusic HAOS addon
 
+# Publish prebuilt images to GHCR so Home Assistant can pull instead of
+# building on the appliance.
+#
+# Speed notes:
+# - aarch64 runs on native ubuntu-24.04-arm (no QEMU).
+# - Dockerfile installs Python deps before COPY of app/rootfs so script-only
+#   changes reuse the cached dependency layer via GHA/registry cache.
+
 on:
   push:
     branches: [main]

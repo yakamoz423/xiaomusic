@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from xiaomusic.config import Config, Device
+from xiaomusic.const import PLAY_TYPE_SIN
 from xiaomusic.ha_conversation import HaConversationPoller
 from xiaomusic.ha_player import HaPlayer, parse_music_public_base
 from xiaomusic.xiaomusic import XiaoMusic
@@ -43,6 +44,8 @@ def _ensure_dirs(*paths: str) -> None:
 def apply_ha_options(config: Config, options: dict[str, Any]) -> None:
     """Apply / re-apply add-on options onto Config (after setting.json load)."""
     config.playback_backend = "ha"
+    # Voice → one track only; never auto-advance / continue_play timers.
+    config.continue_play = False
     config.verbose = bool(options.get("verbose", False))
     config.disable_download = bool(options.get("disable_download", False))
 
@@ -80,7 +83,7 @@ def apply_ha_options(config: Config, options: dict[str, Any]) -> None:
     # Ingress / LAN web UI should not require HTTP basic auth in add-on mode.
     config.disable_httpauth = True
 
-    # Virtual device for command routing.
+    # Virtual device for command routing (single-play: no playlist advance).
     config.mi_did = HA_DID
     config.devices = {
         HA_DID: Device(
@@ -88,6 +91,7 @@ def apply_ha_options(config: Config, options: dict[str, Any]) -> None:
             device_id=HA_DEVICE_ID,
             hardware="HA",
             name="HA Speaker",
+            play_type=PLAY_TYPE_SIN,
         )
     }
 
