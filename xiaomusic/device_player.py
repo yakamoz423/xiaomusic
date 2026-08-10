@@ -614,7 +614,9 @@ class XiaoMusicDevice:
                 return
 
         # 4. 真正安全的下发播放阶段
-        await self.group_force_stop_xiaoai()
+        # HA 模式口令入口已 force_stop；播前再 pause 容易和 play_media 打架且保持静音。
+        if not self._is_ha_backend():
+            await self.group_force_stop_xiaoai()
         self.log.info(f"发送指令给小爱，开始播放: {url}")
 
         results = await self.group_player_play(url, name)

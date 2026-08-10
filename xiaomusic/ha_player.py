@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import socket
@@ -115,6 +116,12 @@ class HaPlayer:
     ) -> tuple[bool, Any]:
         return await self._request("POST", f"services/{service}", data)
 
+    async def get_state(self, entity_id: str) -> dict[str, Any] | None:
+        ok, data = await self._request("GET", f"states/{entity_id}")
+        if not ok or not isinstance(data, dict):
+            return None
+        return data
+
     async def get_states(self) -> list[dict[str, Any]]:
         ok, data = await self._request("GET", "states")
         if not ok or not isinstance(data, list):
@@ -155,6 +162,20 @@ class HaPlayer:
         self.log.info("Auto-selected media_player: %s", self._resolved_entity)
         return self._resolved_entity
 
+    @staticmethod
+    def _is_muted(state: dict[str, Any] | None) -> bool:
+        if not state:
+            return False
+        attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
+        if attrs.get("is_volume_muted") is True:
+            return True
+        if attrs.get("speaker.mute") is True:
+            return True
+        mute = attrs.get("speaker.mute")
+        if isinstance(mute, str) and mute.lower() in ("true", "1", "on", "yes"):
+            return True
+        return False
+
     async def play_url(self, url: str, entity_id: str | None = None) -> bool:
         entity = entity_id or await self.resolve_media_player()
         # music_library may return host:port without scheme
@@ -166,8 +187,8 @@ class HaPlayer:
             self.log.error("refuse play_media with empty/invalid url: %r", url)
             return False
 
-        # XiaoAI often stays muted after voice; unmute before play_media.
         await self._ensure_unmuted(entity)
+        await self._ensure_audible_volume(entity)
 
         self.log.info("play_media %s <- %s", entity, url)
         ok, detail = await self.call_service(
@@ -178,37 +199,118 @@ class HaPlayer:
                 "media_content_type": self.media_content_type,
             },
         )
-        if ok:
-            self.log.info("play_media accepted (%s)", detail)
-            # Some MIOT players accept play_media but stay paused/muted.
-            await self.call_service(
-                "media_player/media_play",
-                {"entity_id": entity},
-            )
-        else:
+        if not ok:
             self.log.error("play_media failed: %s", detail)
-        return ok
+            return False
+        self.log.info("play_media accepted (%s)", detail)
 
-    async def _ensure_unmuted(self, entity: str) -> None:
+        # MIOT often stays paused/muted after play_media — nudge play + unmute again.
+        play_ok, play_detail = await self.call_service(
+            "media_player/media_play",
+            {"entity_id": entity},
+        )
+        self.log.info("media_play after play_media: ok=%s detail=%s", play_ok, play_detail)
+        await self._ensure_unmuted(entity)
+
+        await asyncio.sleep(0.8)
+        state = await self.get_state(entity)
+        if state:
+            attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
+            self.log.info(
+                "post-play state=%s muted=%s vol=%s speaker.mute=%s content_id=%s title=%s",
+                state.get("state"),
+                attrs.get("is_volume_muted"),
+                attrs.get("volume_level"),
+                attrs.get("speaker.mute"),
+                attrs.get("media_content_id"),
+                attrs.get("media_title"),
+            )
+            if self._is_muted(state):
+                self.log.warning(
+                    "speaker still muted after play — retry MIOT unmute + media_play"
+                )
+                await self._ensure_unmuted(entity, force=True)
+                await self.call_service(
+                    "media_player/media_play",
+                    {"entity_id": entity},
+                )
+        return True
+
+    async def _ensure_audible_volume(self, entity: str) -> None:
+        state = await self.get_state(entity)
+        attrs = state.get("attributes") if state and isinstance(state.get("attributes"), dict) else {}
         try:
-            ok, detail = await self.call_service(
+            level = float(attrs.get("volume_level") or 0)
+        except (TypeError, ValueError):
+            level = 0.0
+        if level >= 0.15:
+            return
+        # Too quiet / zero — bump to a hearable level.
+        target = 0.3
+        ok, detail = await self.call_service(
+            "media_player/volume_set",
+            {"entity_id": entity, "volume_level": target},
+        )
+        self.log.info(
+            "volume_set %s -> %.2f ok=%s detail=%s",
+            entity,
+            target,
+            ok,
+            detail,
+        )
+        # MIOT property fallback
+        await self.call_service(
+            "xiaomi_miot/set_property",
+            {"entity_id": entity, "field": "speaker.volume", "value": int(target * 100)},
+        )
+
+    async def _ensure_unmuted(self, entity: str, force: bool = False) -> None:
+        state = await self.get_state(entity)
+        if not force and state and not self._is_muted(state):
+            self.log.info("%s already unmuted", entity)
+            return
+
+        attempts = (
+            (
                 "media_player/volume_mute",
                 {"entity_id": entity, "is_volume_muted": False},
-            )
-            if ok:
-                self.log.info("unmuted %s", entity)
-            else:
-                self.log.debug("volume_mute unmute failed: %s", detail)
-        except Exception as exc:  # noqa: BLE001
-            self.log.debug("unmute ignored: %s", exc)
+            ),
+            (
+                "xiaomi_miot/set_property",
+                {"entity_id": entity, "field": "speaker.mute", "value": False},
+            ),
+            (
+                "xiaomi_miot/set_property",
+                {"entity_id": entity, "field": "speaker.mute", "value": 0},
+            ),
+        )
+        for service, payload in attempts:
+            ok, detail = await self.call_service(service, payload)
+            self.log.info("unmute via %s ok=%s detail=%s", service, ok, str(detail)[:200])
+            if not ok:
+                continue
+            await asyncio.sleep(0.3)
+            state = await self.get_state(entity)
+            if state and not self._is_muted(state):
+                self.log.info("unmute confirmed on %s via %s", entity, service)
+                return
+
+        state = await self.get_state(entity)
+        self.log.warning(
+            "unmute may have failed on %s (still muted=%s attrs.mute=%s)",
+            entity,
+            self._is_muted(state),
+            (state or {}).get("attributes", {}).get("speaker.mute") if state else None,
+        )
 
     async def stop(self, entity_id: str | None = None) -> bool:
-        """Stop with Xiaomi-friendly fallbacks (media_stop often 500s)."""
+        """Interrupt XiaoAI hold music. Prefer pause; media_stop often 500s on MIOT."""
         entity = entity_id or await self.resolve_media_player()
         payload = {"entity_id": entity}
+        # Prefer pause over stop — stop frequently 500s and is unnecessary before play_media.
         attempts = (
-            "media_player/media_stop",
             "media_player/media_pause",
+            "media_player/media_stop",
             "media_player/turn_off",
         )
         for service in attempts:
