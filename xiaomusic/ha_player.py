@@ -162,20 +162,6 @@ class HaPlayer:
         self.log.info("Auto-selected media_player: %s", self._resolved_entity)
         return self._resolved_entity
 
-    @staticmethod
-    def _is_muted(state: dict[str, Any] | None) -> bool:
-        if not state:
-            return False
-        attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
-        if attrs.get("is_volume_muted") is True:
-            return True
-        if attrs.get("speaker.mute") is True:
-            return True
-        mute = attrs.get("speaker.mute")
-        if isinstance(mute, str) and mute.lower() in ("true", "1", "on", "yes"):
-            return True
-        return False
-
     async def play_url(self, url: str, entity_id: str | None = None) -> bool:
         entity = entity_id or await self.resolve_media_player()
         # music_library may return host:port without scheme
@@ -186,8 +172,6 @@ class HaPlayer:
         if not url or stripped.endswith("/music"):
             self.log.error("refuse play_media with empty/invalid url: %r", url)
             return False
-
-        await self._ensure_unmuted(entity)
 
         self.log.info("play_media %s <- %s", entity, url)
         ok, detail = await self.call_service(
@@ -203,76 +187,28 @@ class HaPlayer:
             return False
         self.log.info("play_media accepted (%s)", detail)
 
-        # MIOT often stays paused/muted after play_media — nudge play + unmute again.
         play_ok, play_detail = await self.call_service(
             "media_player/media_play",
             {"entity_id": entity},
         )
         self.log.info("media_play after play_media: ok=%s detail=%s", play_ok, play_detail)
-        await self._ensure_unmuted(entity)
 
-        await asyncio.sleep(0.8)
+        await asyncio.sleep(0.5)
         state = await self.get_state(entity)
         if state:
-            attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
+            attrs = (
+                state.get("attributes")
+                if isinstance(state.get("attributes"), dict)
+                else {}
+            )
             self.log.info(
-                "post-play state=%s muted=%s vol=%s speaker.mute=%s content_id=%s title=%s",
+                "post-play state=%s vol=%s content_id=%s title=%s",
                 state.get("state"),
-                attrs.get("is_volume_muted"),
                 attrs.get("volume_level"),
-                attrs.get("speaker.mute"),
                 attrs.get("media_content_id"),
                 attrs.get("media_title"),
             )
-            if self._is_muted(state):
-                self.log.warning(
-                    "speaker still muted after play — retry MIOT unmute + media_play"
-                )
-                await self._ensure_unmuted(entity, force=True)
-                await self.call_service(
-                    "media_player/media_play",
-                    {"entity_id": entity},
-                )
         return True
-
-    async def _ensure_unmuted(self, entity: str, force: bool = False) -> None:
-        state = await self.get_state(entity)
-        if not force and state and not self._is_muted(state):
-            self.log.info("%s already unmuted", entity)
-            return
-
-        attempts = (
-            (
-                "media_player/volume_mute",
-                {"entity_id": entity, "is_volume_muted": False},
-            ),
-            (
-                "xiaomi_miot/set_property",
-                {"entity_id": entity, "field": "speaker.mute", "value": False},
-            ),
-            (
-                "xiaomi_miot/set_property",
-                {"entity_id": entity, "field": "speaker.mute", "value": 0},
-            ),
-        )
-        for service, payload in attempts:
-            ok, detail = await self.call_service(service, payload)
-            self.log.info("unmute via %s ok=%s detail=%s", service, ok, str(detail)[:200])
-            if not ok:
-                continue
-            await asyncio.sleep(0.3)
-            state = await self.get_state(entity)
-            if state and not self._is_muted(state):
-                self.log.info("unmute confirmed on %s via %s", entity, service)
-                return
-
-        state = await self.get_state(entity)
-        self.log.warning(
-            "unmute may have failed on %s (still muted=%s attrs.mute=%s)",
-            entity,
-            self._is_muted(state),
-            (state or {}).get("attributes", {}).get("speaker.mute") if state else None,
-        )
 
     async def stop(self, entity_id: str | None = None) -> bool:
         """Interrupt XiaoAI hold music. Prefer pause; media_stop often 500s on MIOT."""
