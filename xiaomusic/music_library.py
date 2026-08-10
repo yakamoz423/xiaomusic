@@ -677,8 +677,20 @@ class MusicLibrary:
         filename = self.all_music[name]
         self.log.info(f"try get_filename. filename:{filename}")
 
+        if self.is_web_music(name):
+            return filename
+
         if os.path.exists(filename):
             return filename
+
+        # Stale index entry (file deleted) — drop so fuzzy match won't keep hitting it.
+        self.log.warning(
+            "本地音乐索引失效，移除: name=%s filename=%s", name, filename
+        )
+        try:
+            del self.all_music[name]
+        except KeyError:
+            pass
         return ""
 
     def is_music_exist(self, name):
@@ -1353,12 +1365,14 @@ class MusicLibrary:
             name: 歌曲名称
 
         Returns:
-            str: 本地音乐播放URL
+            str: 本地音乐播放URL；文件不存在时返回空串
         """
         filename = self.get_filename(name)
         self.log.info(
             f"_get_local_music_url local music. name:{name}, filename:{filename}"
         )
+        if not filename:
+            return ""
         return self._get_file_url(filename)
 
     def _get_file_url(self, filepath):
@@ -1368,8 +1382,12 @@ class MusicLibrary:
             filepath: 文件的完整路径
 
         Returns:
-            str: 文件访问URL
+            str: 文件访问URL；路径为空时返回空串（避免变成 /music/）
         """
+        if not filepath or not str(filepath).strip():
+            self.log.warning("_get_file_url empty filepath, refuse /music/ URL")
+            return ""
+
         filename = filepath
 
         # 处理文件路径
@@ -1378,6 +1396,10 @@ class MusicLibrary:
         filename = filename.replace("\\", "/")
         if filename.startswith("/"):
             filename = filename[1:]
+
+        if not filename:
+            self.log.warning("_get_file_url resolved empty relative path")
+            return ""
 
         self.log.info(f"_get_file_url filepath:{filepath}, filename:{filename}")
 

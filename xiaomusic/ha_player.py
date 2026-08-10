@@ -160,6 +160,15 @@ class HaPlayer:
         # music_library may return host:port without scheme
         if url and not url.startswith(("http://", "https://")):
             url = f"http://{url}" if "://" not in url else url
+        # Refuse empty music root URLs produced by missing local files.
+        stripped = (url or "").rstrip("/")
+        if not url or stripped.endswith("/music"):
+            self.log.error("refuse play_media with empty/invalid url: %r", url)
+            return False
+
+        # XiaoAI often stays muted after voice; unmute before play_media.
+        await self._ensure_unmuted(entity)
+
         self.log.info("play_media %s <- %s", entity, url)
         ok, detail = await self.call_service(
             "media_player/play_media",
@@ -171,9 +180,27 @@ class HaPlayer:
         )
         if ok:
             self.log.info("play_media accepted (%s)", detail)
+            # Some MIOT players accept play_media but stay paused/muted.
+            await self.call_service(
+                "media_player/media_play",
+                {"entity_id": entity},
+            )
         else:
             self.log.error("play_media failed: %s", detail)
         return ok
+
+    async def _ensure_unmuted(self, entity: str) -> None:
+        try:
+            ok, detail = await self.call_service(
+                "media_player/volume_mute",
+                {"entity_id": entity, "is_volume_muted": False},
+            )
+            if ok:
+                self.log.info("unmuted %s", entity)
+            else:
+                self.log.debug("volume_mute unmute failed: %s", detail)
+        except Exception as exc:  # noqa: BLE001
+            self.log.debug("unmute ignored: %s", exc)
 
     async def stop(self, entity_id: str | None = None) -> bool:
         """Stop with Xiaomi-friendly fallbacks (media_stop often 500s)."""

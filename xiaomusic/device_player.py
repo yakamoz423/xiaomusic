@@ -286,7 +286,11 @@ class XiaoMusicDevice:
             return False
 
         # 下载歌曲
-        await self.download(search_key, name)
+        query = (search_key or name or "").strip()
+        if not query:
+            await self.do_tts("没有可搜索的歌名")
+            return False
+        await self.download(query, name)
         # 把文件插入到播放列表里
         await self.add_download_music(name)
         return True
@@ -355,6 +359,19 @@ class XiaoMusicDevice:
         if len(names) > 1:
             for idx, music_name in enumerate(names, 1):
                 self.log.info(f"  第{idx}个: {music_name}")
+
+        # Drop stale library hits whose local files are gone (would become /music/).
+        if names:
+            playable = [
+                n for n in names if self.xiaomusic.music_library.is_music_exist(n)
+            ]
+            if len(playable) != len(names):
+                missing = [n for n in names if n not in playable]
+                self.log.warning(
+                    "模糊匹配到但本地不可播（将忽略）: %s",
+                    missing,
+                )
+            names = playable
 
         if len(names) > 1:
             if auto_index is not None and 1 <= auto_index <= len(names):
