@@ -77,6 +77,9 @@ def apply_ha_options(config: Config, options: dict[str, Any]) -> None:
     if not config.edge_tts_voice:
         config.edge_tts_voice = "zh-CN-XiaoyiNeural"
 
+    # Ingress / LAN web UI should not require HTTP basic auth in add-on mode.
+    config.disable_httpauth = True
+
     # Virtual device for command routing.
     config.mi_did = HA_DID
     config.devices = {
@@ -118,20 +121,18 @@ def build_config_from_options(options: dict[str, Any]) -> Config:
 
 
 async def async_main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [ha] [%(levelname)s] %(message)s",
+    )
+
     options = _load_options()
     conversation_entity = str(options.get("conversation_entity") or "").strip()
-    if not conversation_entity:
-        raise SystemExit(
-            "options.conversation_entity is required "
-            "(e.g. sensor.xiaomi_l05c_xxxx_conversation)"
-        )
-
     media_player = str(options.get("media_player") or "").strip()
     poll_interval = float(options.get("poll_interval_seconds") or 1.0)
 
     config = build_config_from_options(options)
 
-    # Import HTTP stack after config paths exist.
     import uvicorn
 
     from xiaomusic.api import HttpInit
@@ -161,11 +162,13 @@ async def async_main() -> None:
     except Exception as exc:
         xiaomusic.log.warning("media_player resolve deferred: %s", exc)
 
+    # Always attach poller so run_forever can start; empty entity waits in run_loop.
     ha_conversation = HaConversationPoller(
         conversation_entity=conversation_entity,
         did=HA_DID,
         poll_interval_seconds=poll_interval,
         logger=xiaomusic.log,
+        options_loader=_load_options,
     )
     xiaomusic.ha_conversation = ha_conversation
 
@@ -192,11 +195,13 @@ async def async_main() -> None:
     signal.signal(signal.SIGTERM, _handle_exit)
 
     xiaomusic.log.info(
-        "XiaoMusic HA mode: conversation=%s media_player=%s music_url=%s:%s",
-        conversation_entity,
+        "XiaoMusic HA mode: conversation=%s media_player=%s music_url=%s:%s "
+        "(Ingress web UI :%s , HA config /ha-config or :8099)",
+        conversation_entity or "(pending via /ha-config)",
         media_player or "(auto)",
         xiaomusic.config.hostname,
         xiaomusic.config.public_port,
+        xiaomusic.config.port,
     )
     await server.serve()
     await ha_player.close()
@@ -204,10 +209,6 @@ async def async_main() -> None:
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [ha] [%(levelname)s] %(message)s",
-    )
     asyncio.run(async_main())
 
 

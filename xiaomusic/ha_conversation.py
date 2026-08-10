@@ -13,6 +13,7 @@ import aiohttp
 HA_API_URL = os.environ.get("HA_API_URL", "http://supervisor/core/api")
 
 OnQueryCallback = Callable[..., Awaitable[None]]
+OptionsLoader = Callable[[], dict[str, Any]]
 
 log = logging.getLogger("xiaomusic.ha_conversation")
 
@@ -27,6 +28,7 @@ class HaConversationPoller:
         poll_interval_seconds: float = 1.0,
         session: aiohttp.ClientSession | None = None,
         logger: logging.Logger | None = None,
+        options_loader: OptionsLoader | None = None,
     ):
         self.conversation_entity = (conversation_entity or "").strip()
         self.did = did
@@ -36,6 +38,7 @@ class HaConversationPoller:
         self.log = logger or log
         self._last_fingerprint: str | None = None
         self._last_query: str = ""
+        self._options_loader = options_loader
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -127,11 +130,38 @@ class HaConversationPoller:
         )
         return f"{ts}|{query}"
 
+    async def _wait_for_entity(self) -> None:
+        """Block until conversation_entity is configured (web UI / options)."""
+        while not self.conversation_entity:
+            self.log.warning(
+                "conversation_entity not set — open Ingress /ha-config "
+                "(or :8099) to pick a MIOT conversation sensor"
+            )
+            await asyncio.sleep(5)
+            if self._options_loader is None:
+                continue
+            try:
+                options = self._options_loader() or {}
+            except Exception as exc:  # noqa: BLE001
+                self.log.debug("options reload failed: %s", exc)
+                continue
+            entity = str(options.get("conversation_entity") or "").strip()
+            if entity:
+                self.conversation_entity = entity
+                try:
+                    self.poll_interval = max(
+                        0.2, float(options.get("poll_interval_seconds") or 1.0)
+                    )
+                except (TypeError, ValueError):
+                    pass
+                self.log.info("conversation_entity ready: %s", entity)
+
     async def run_loop(
         self,
         on_query: OnQueryCallback,
         reset_timer: OnQueryCallback | None = None,
     ) -> None:
+        await self._wait_for_entity()
         if not self.conversation_entity:
             raise RuntimeError("conversation_entity is required")
 

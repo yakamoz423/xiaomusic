@@ -20,10 +20,17 @@ XiaoAI voice
 1. **Settings → Add-ons → Add-on store → ⋮ → Repositories**
 2. Add `https://github.com/yakamoz423/xiaomusic`
 3. Refresh, install **XiaoMusic**
-4. Set `conversation_entity` (required) and optional `media_player`, then start
+4. Start the add-on, open **Ingress** for the music UI; open `/ha-config`
+   to pick conversation sensor + media player, then **Save and restart**
 
 Add-on folder: top-level `ha_xiaomusic/`.  
 Images: `ghcr.io/yakamoz423/{arch}-xiaomusic`.
+
+## Web UI
+
+- **Ingress / 侧栏** → 原版 XiaoMusic 音乐管理界面（端口 `8090`）
+- **HA 设备配置** → 同一端口下的 `/ha-config`（或可选独立端口 `8099`）
+- 音箱取音乐仍走主机 `8090` 的 HTTP 文件服务
 
 ## Configuration
 
@@ -38,6 +45,8 @@ Images: `ghcr.io/yakamoz423/{arch}-xiaomusic`.
 | `search_prefix` | no | Default `bilisearch:` |
 | `verbose` | no | Debug logs |
 
+Same options are editable in **Configuration** tab or `/ha-config`.
+
 Permissions: `hassio_api`, `homeassistant_api`, `host_network`, `media:rw`, `addon_config:rw`.
 
 ## Acceptance checks
@@ -50,4 +59,4 @@ Permissions: `hassio_api`, `homeassistant_api`, `host_network`, `media:rw`, `add
 ## Notes
 
 - Music files go under `/media/xiaomusic` when the media share is mapped.
-- Web UI / Ingress is on port `8090`.
+- Ingress opens the original music UI on `8090`; HA device settings are at `/ha-config`.

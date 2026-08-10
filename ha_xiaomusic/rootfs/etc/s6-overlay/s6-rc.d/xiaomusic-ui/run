@@ -1,0 +1,8 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# ==============================================================================
+# XiaoMusic ingress UI (device / options configuration)
+# ==============================================================================
+
+bashio::log.info 'Starting XiaoMusic config UI on port 8099...'
+exec /app/.venv/bin/python3 /usr/bin/xiaomusic-ui.py

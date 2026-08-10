@@ -9,7 +9,7 @@
 
 1. **设置 → 插件 → 插件商店 → ⋮ → 仓库**
 2. 添加：`https://github.com/yakamoz423/xiaomusic`
-3. 安装 **XiaoMusic**，填写 `conversation_entity` 后启动
+3. 安装 **XiaoMusic**，打开 Ingress 选择对话传感器与音箱后「保存并重启」
 
 镜像：`ghcr.io/yakamoz423/{arch}-xiaomusic`  
 说明：[`ha_xiaomusic/DOCS.md`](ha_xiaomusic/DOCS.md)

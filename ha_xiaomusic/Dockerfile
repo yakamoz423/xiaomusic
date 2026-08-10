@@ -112,8 +112,11 @@ COPY ha_xiaomusic/rootfs /
 
 RUN \
     chmod a+x /usr/bin/xiaomusic-ha.py \
+    && chmod a+x /usr/bin/xiaomusic-ui.py \
     && chmod a+x /etc/s6-overlay/s6-rc.d/xiaomusic/run \
-    && chmod a+x /etc/s6-overlay/s6-rc.d/xiaomusic/finish
+    && chmod a+x /etc/s6-overlay/s6-rc.d/xiaomusic/finish \
+    && chmod a+x /etc/s6-overlay/s6-rc.d/xiaomusic-ui/run \
+    && chmod a+x /etc/s6-overlay/s6-rc.d/xiaomusic-ui/finish
 
 WORKDIR /app
 

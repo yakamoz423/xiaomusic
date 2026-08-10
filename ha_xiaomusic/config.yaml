@@ -1,6 +1,6 @@
 ---
 name: XiaoMusic
-version: "0.1.4"
+version: "0.1.6"
 slug: xiaomusic
 description: >-
   Play music on XiaoAI via Home Assistant conversation sensor + yt-dlp
@@ -23,8 +23,10 @@ map:
   - addon_config:rw
 ports:
   8090/tcp: 8090
+  8099/tcp: null
 ports_description:
-  8090/tcp: XiaoMusic HTTP (music files + web UI)
+  8090/tcp: XiaoMusic HTTP (原版 Web UI + 音乐文件服务)
+  8099/tcp: HA 配置页（可选；Ingress 内也可用 /ha-config）
 options:
   conversation_entity: ""
   media_player: ""
