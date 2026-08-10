@@ -4,5 +4,5 @@
 # XiaoMusic ingress UI (device / options configuration)
 # ==============================================================================
 
-bashio::log.info 'Starting XiaoMusic config UI on port 8099...'
+bashio::log.info 'Starting XiaoMusic config UI on port 8109 (Ingress /ha-config also works)...'
 exec /app/.venv/bin/python3 /usr/bin/xiaomusic-ui.py

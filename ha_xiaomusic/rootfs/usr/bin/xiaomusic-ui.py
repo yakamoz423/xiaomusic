@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""XiaoMusic HA config UI on :8099 (same page as /ha-config on :8090)."""
+"""XiaoMusic HA config UI (same page as Ingress /ha-config on :8090).
+
+Default port 8109 — avoid clashing with XiaoAir / other addons on :8099
+when host_network is enabled.
+"""
 from __future__ import annotations
 
 import json
 import os
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
@@ -14,7 +19,7 @@ sys.path.insert(0, "/app")
 
 from xiaomusic import ha_config_ui as ha_ui  # noqa: E402
 
-UI_PORT = int(os.environ.get("XIAOMUSIC_UI_PORT", "8099"))
+UI_PORT = int(os.environ.get("XIAOMUSIC_UI_PORT", "8109"))
 # Standalone page: music UI is on host port 8090 (Ingress / direct).
 MUSIC_UI_HREF = os.environ.get(
     "XIAOMUSIC_MUSIC_UI_HREF",
@@ -109,7 +114,18 @@ class UIHandler(BaseHTTPRequestHandler):
 def main() -> None:
     if not os.environ.get("SUPERVISOR_TOKEN"):
         print("WARNING: SUPERVISOR_TOKEN missing", flush=True)
-    server = ThreadingHTTPServer(("0.0.0.0", UI_PORT), UIHandler)
+    try:
+        server = ThreadingHTTPServer(("0.0.0.0", UI_PORT), UIHandler)
+    except OSError as exc:
+        # Port taken (e.g. another addon) — do not crash-loop s6.
+        print(
+            f"WARNING: cannot bind :{UI_PORT} ({exc}); "
+            "HA config remains available via Ingress /ha-config. Sleeping.",
+            flush=True,
+        )
+        while True:
+            time.sleep(3600)
+        return
     print(f"XiaoMusic HA config UI listening on :{UI_PORT}", flush=True)
     try:
         server.serve_forever()
