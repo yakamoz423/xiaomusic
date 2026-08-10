@@ -188,7 +188,6 @@ class HaPlayer:
             return False
 
         await self._ensure_unmuted(entity)
-        await self._ensure_audible_volume(entity)
 
         self.log.info("play_media %s <- %s", entity, url)
         ok, detail = await self.call_service(
@@ -235,34 +234,6 @@ class HaPlayer:
                     {"entity_id": entity},
                 )
         return True
-
-    async def _ensure_audible_volume(self, entity: str) -> None:
-        state = await self.get_state(entity)
-        attrs = state.get("attributes") if state and isinstance(state.get("attributes"), dict) else {}
-        try:
-            level = float(attrs.get("volume_level") or 0)
-        except (TypeError, ValueError):
-            level = 0.0
-        if level >= 0.15:
-            return
-        # Too quiet / zero — bump to a hearable level.
-        target = 0.3
-        ok, detail = await self.call_service(
-            "media_player/volume_set",
-            {"entity_id": entity, "volume_level": target},
-        )
-        self.log.info(
-            "volume_set %s -> %.2f ok=%s detail=%s",
-            entity,
-            target,
-            ok,
-            detail,
-        )
-        # MIOT property fallback
-        await self.call_service(
-            "xiaomi_miot/set_property",
-            {"entity_id": entity, "field": "speaker.volume", "value": int(target * 100)},
-        )
 
     async def _ensure_unmuted(self, entity: str, force: bool = False) -> None:
         state = await self.get_state(entity)
