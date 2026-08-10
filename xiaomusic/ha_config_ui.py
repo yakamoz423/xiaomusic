@@ -466,8 +466,8 @@ def enrich_result(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def page_html(*, music_ui_href: str = "/") -> str:
-    """Config page HTML. music_ui_href is relative link to original XiaoMusic UI."""
+def page_html(*, music_ui_href: str = "../static/default/index.html") -> str:
+    """Config page HTML. music_ui_href is relative link to console UI."""
     return HTML_TEMPLATE.replace("__MUSIC_UI_HREF__", music_ui_href)
 
 
@@ -476,7 +476,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>XiaoMusic HA 配置</title>
+  <title>XiaoMusic 设置</title>
   <style>
     :root {
       --bg: #12151c;
@@ -569,8 +569,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
   <div class="card">
-    <h1>XiaoMusic · HA 配置</h1>
-    <a class="nav" href="__MUSIC_UI_HREF__">← 打开原版音乐管理界面</a>
+    <h1>XiaoMusic · 设置</h1>
+    <a class="nav" href="__MUSIC_UI_HREF__">← 返回控制台</a>
     <p>选择对话传感器与目标音箱，调整口令与下载选项。保存后建议重启以立即生效。</p>
 
     <label for="conversation">对话传感器 conversation</label>

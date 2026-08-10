@@ -16,7 +16,10 @@ from xiaomusic import ha_config_ui as ha_ui  # noqa: E402
 
 UI_PORT = int(os.environ.get("XIAOMUSIC_UI_PORT", "8099"))
 # Standalone page: music UI is on host port 8090 (Ingress / direct).
-MUSIC_UI_HREF = os.environ.get("XIAOMUSIC_MUSIC_UI_HREF", "http://homeassistant.local:8090/")
+MUSIC_UI_HREF = os.environ.get(
+    "XIAOMUSIC_MUSIC_UI_HREF",
+    "http://homeassistant.local:8090/static/default/index.html",
+)
 
 
 class UIHandler(BaseHTTPRequestHandler):

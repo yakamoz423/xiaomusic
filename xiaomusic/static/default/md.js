@@ -701,7 +701,9 @@ function addToFavorites() {
 
 function openSettings() {
   console.log("打开设置");
-  window.location.href = "setting.html";
+  // HAOS: replace original setting.html with HA entity/options config.
+  // Relative path works under both :8090 and HA Ingress.
+  window.location.href = "../../ha-config/";
 }
 function toggleVolume() {
   const isVisible = $("#volume-component").is(":visible");

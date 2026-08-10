@@ -28,8 +28,9 @@ Images: `ghcr.io/yakamoz423/{arch}-xiaomusic`.
 
 ## Web UI
 
-- **Ingress / 侧栏** → 原版 XiaoMusic 音乐管理界面（端口 `8090`）
-- **HA 设备配置** → 同一端口下的 `/ha-config`（或可选独立端口 `8099`）
+- **Ingress / 侧栏** → 入口页（相对路径，兼容 Ingress）
+- **控制台** → `static/default/index.html`（播放控制）
+- **设置** → `/ha-config/`（HA 对话传感器 / 音箱 / 口令；已取代原版小米设置页）
 - 音箱取音乐仍走主机 `8090` 的 HTTP 文件服务
 
 ## Configuration
@@ -59,4 +60,4 @@ Permissions: `hassio_api`, `homeassistant_api`, `host_network`, `media:rw`, `add
 ## Notes
 
 - Music files go under `/media/xiaomusic` when the media share is mapped.
-- Ingress opens the original music UI on `8090`; HA device settings are at `/ha-config`.
+- Ingress opens the music entry on `8090`; **设置** is `/ha-config` (replaces original Xiaomi settings UI).

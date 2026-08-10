@@ -20,8 +20,7 @@ async def ha_config_redirect():
 
 @router.get("/", response_class=HTMLResponse)
 async def ha_config_page():
-    # Relative ../ goes to original music UI at /
-    return HTMLResponse(ha_ui.page_html(music_ui_href="../"))
+    return HTMLResponse(ha_ui.page_html(music_ui_href="../static/default/index.html"))
 
 
 @router.get("/api/status")
