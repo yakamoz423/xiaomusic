@@ -33,3 +33,9 @@ configuration:
   verbose:
     name: Verbose logging
     description: Enable debug logs.
+  enable_yt_dlp_cookies:
+    name: Enable yt-dlp cookies
+    description: >-
+      Pass /data/xiaomusic_conf/yt-dlp-cookie.txt to yt-dlp downloads.
+      Needed to bypass Bilibili HTTP 412. Upload a Netscape cookies.txt
+      on the Ingress settings page.

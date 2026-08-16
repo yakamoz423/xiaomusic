@@ -45,8 +45,22 @@ Images: `ghcr.io/yakamoz423/{arch}-xiaomusic`.
 | `disable_download` | no | Local / already-downloaded only |
 | `search_prefix` | no | Default `bilisearch:` |
 | `verbose` | no | Debug logs |
+| `enable_yt_dlp_cookies` | no | Pass uploaded Netscape cookies to yt-dlp (Bilibili 412) |
 
 Same options are editable in **Configuration** tab or `/ha-config`.
+
+### yt-dlp cookies (Bilibili HTTP 412)
+
+If logs show `Unable to download JSON metadata: HTTP Error 412`, Bilibili is
+blocking cookieless `bilisearch:`.
+
+1. Open `https://www.bilibili.com` once in a desktop browser (login optional).
+2. Export Netscape `cookies.txt` (e.g. [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/cclelndahbckbenkjhflpdbgdldlbecc)).
+3. Ingress → **设置** → choose the file (or paste) → **上传 cookies**.
+4. Confirm status shows `buvid3`. If the download command still has no
+   `--cookies`, click **保存并重启**.
+
+Cookies are stored at `/data/xiaomusic_conf/yt-dlp-cookie.txt` (not in options).
 
 Permissions: `hassio_api`, `homeassistant_api`, `host_network`, `media:rw`, `addon_config:rw`.
 

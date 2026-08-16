@@ -32,3 +32,8 @@ configuration:
   verbose:
     name: 详细日志
     description: 启用调试日志。
+  enable_yt_dlp_cookies:
+    name: 启用 yt-dlp cookies
+    description: >-
+      下载时把 /data/xiaomusic_conf/yt-dlp-cookie.txt 传给 yt-dlp。
+      用于绕过 B 站搜索 HTTP 412。请在 Ingress 设置页上传 Netscape cookies.txt。

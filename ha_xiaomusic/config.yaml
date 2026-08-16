@@ -1,6 +1,6 @@
 ---
 name: XiaoMusic
-version: "0.1.15"
+version: "0.1.16"
 slug: xiaomusic
 description: >-
   Play music on XiaoAI via Home Assistant conversation sensor + yt-dlp
@@ -36,6 +36,7 @@ options:
   disable_download: false
   search_prefix: "bilisearch:"
   verbose: false
+  enable_yt_dlp_cookies: false
 schema:
   conversation_entity: str?
   media_player: str?
@@ -45,3 +46,4 @@ schema:
   disable_download: bool?
   search_prefix: str?
   verbose: bool?
+  enable_yt_dlp_cookies: bool?

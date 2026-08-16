@@ -54,9 +54,147 @@ DEFAULT_OPTIONS: dict[str, Any] = {
     "disable_download": False,
     "search_prefix": "bilisearch:",
     "verbose": False,
+    "enable_yt_dlp_cookies": False,
 }
 
+COOKIES_FILENAME = "yt-dlp-cookie.txt"
+
 _lock = threading.Lock()
+
+
+def cookies_file_path() -> str:
+    conf = os.environ.get("XIAOMUSIC_CONF_PATH", "/data/xiaomusic_conf")
+    os.makedirs(conf, exist_ok=True)
+    return os.path.join(conf, COOKIES_FILENAME)
+
+
+def inspect_cookies_text(text: str) -> dict[str, Any]:
+    """Inspect Netscape cookies.txt without exposing cookie values."""
+    has_bilibili = False
+    has_buvid3 = False
+    has_youtube = False
+    line_count = 0
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("#HttpOnly_"):
+            line = line[len("#HttpOnly_") :]
+        elif line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 6:
+            continue
+        line_count += 1
+        domain = parts[0].lower()
+        name = parts[5]
+        if "bilibili" in domain:
+            has_bilibili = True
+            if name.lower() == "buvid3":
+                has_buvid3 = True
+        if "youtube" in domain or "google.com" in domain:
+            has_youtube = True
+    return {
+        "line_count": line_count,
+        "has_bilibili": has_bilibili,
+        "has_buvid3": has_buvid3,
+        "has_youtube": has_youtube,
+    }
+
+
+def cookies_status() -> dict[str, Any]:
+    path = cookies_file_path()
+    present = os.path.isfile(path) and os.path.getsize(path) > 0
+    info: dict[str, Any] = {
+        "path": path,
+        "present": present,
+        "size": os.path.getsize(path) if present else 0,
+        "mtime": None,
+        "line_count": 0,
+        "has_bilibili": False,
+        "has_buvid3": False,
+        "has_youtube": False,
+    }
+    if not present:
+        return info
+    try:
+        info["mtime"] = time.strftime(
+            "%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(path))
+        )
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            info.update(inspect_cookies_text(handle.read()))
+    except OSError:
+        pass
+    return info
+
+
+def apply_cookies_flag_to_runtime(enabled: bool) -> bool:
+    """Hot-patch the running XiaoMusic config when this process hosts it."""
+    try:
+        from xiaomusic.api.dependencies import _state
+
+        if not _state.is_initialized():
+            return False
+        _state._xiaomusic.config.enable_yt_dlp_cookies = enabled
+        if _state._log:
+            _state._log.info(
+                "HA cookies flag applied live: enable_yt_dlp_cookies=%s path=%s",
+                enabled,
+                cookies_file_path(),
+            )
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def save_cookies_text(text: str, enable: bool = True) -> dict[str, Any]:
+    text = (text or "").replace("\r\n", "\n")
+    if not text.strip():
+        raise ValueError("cookies 内容为空")
+    parsed = inspect_cookies_text(text)
+    if int(parsed.get("line_count") or 0) <= 0:
+        raise ValueError(
+            "不是有效的 Netscape cookies.txt（需要制表符分隔的 cookie 行）"
+        )
+    path = cookies_file_path()
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+        if not text.endswith("\n"):
+            handle.write("\n")
+
+    live = False
+    if enable:
+        options = load_options()
+        options["enable_yt_dlp_cookies"] = True
+        write_options_file(options)
+        try:
+            supervisor_set_options(options)
+        except Exception as err:  # noqa: BLE001
+            print(f"warning: supervisor options sync failed: {err}", flush=True)
+        live = apply_cookies_flag_to_runtime(True)
+
+    cookies = cookies_status()
+    hints = []
+    if not cookies.get("has_bilibili"):
+        hints.append("未检测到 .bilibili.com，B 站搜索 412 可能仍会失败")
+    elif not cookies.get("has_buvid3"):
+        hints.append("未检测到 buvid3，建议重新导出（打开一次 bilibili.com 即可）")
+    message = f"已保存 cookies（{cookies.get('line_count') or 0} 条）"
+    if enable:
+        message += "，并已启用 yt-dlp --cookies"
+    if live:
+        message += "。当前进程已生效，无需重启即可下载。"
+    else:
+        message += "。请点「保存并重启」让下载进程加载 cookies。"
+    if hints:
+        message += "。注意: " + "；".join(hints)
+    return {
+        "ok": True,
+        "options": load_options(),
+        "cookies": cookies,
+        "live": live,
+        "message": message,
+    }
 
 
 def ha_headers() -> dict[str, str]:
@@ -305,6 +443,9 @@ def normalize_options(raw: dict[str, Any]) -> dict[str, Any]:
             ).strip()
             or "bilisearch:",
             "verbose": bool(raw.get("verbose", options["verbose"])),
+            "enable_yt_dlp_cookies": bool(
+                raw.get("enable_yt_dlp_cookies", options["enable_yt_dlp_cookies"])
+            ),
         }
     )
     return options
@@ -337,6 +478,9 @@ def save_options(raw: dict[str, Any], restart: bool = False) -> dict[str, Any]:
             result["message"] = "已保存，正在重启插件以应用配置…"
             result["restarting"] = True
             threading.Thread(target=_delayed_restart, daemon=True).start()
+        else:
+            apply_cookies_flag_to_runtime(bool(options.get("enable_yt_dlp_cookies")))
+        result["cookies"] = cookies_status()
         return result
 
 
@@ -453,6 +597,7 @@ def status() -> dict[str, Any]:
         "media_player": media,
         "players": list_media_players(),
         "conversations": list_conversation_sensors(),
+        "cookies": cookies_status(),
     }
 
 
@@ -463,6 +608,7 @@ def enrich_result(result: dict[str, Any]) -> dict[str, Any]:
     result["conversations"] = snap.get("conversations")
     result["conversation"] = snap.get("conversation")
     result["media_player"] = snap.get("media_player")
+    result["cookies"] = result.get("cookies") or snap.get("cookies")
     return result
 
 
@@ -517,7 +663,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
     a.nav:hover { text-decoration: underline; }
     label { display: block; font-size: 0.88rem; margin: 12px 0 6px; color: var(--muted); }
-    select, input[type="text"], input[type="number"] {
+    select, input[type="text"], input[type="number"], input[type="file"], textarea {
       width: 100%;
       background: #0d0f14;
       color: var(--text);
@@ -526,6 +672,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       padding: 10px 12px;
       font-size: 0.95rem;
     }
+    textarea { min-height: 7em; font-family: ui-monospace, Consolas, monospace; font-size: 0.8rem; }
     .check {
       display: flex;
       align-items: center;
@@ -594,6 +741,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <label class="check"><input id="nodl" type="checkbox" /> 禁用下载（仅本地）</label>
     <label class="check"><input id="verbose" type="checkbox" /> 详细日志</label>
 
+    <h2>yt-dlp Cookies（B 站 412）</h2>
+    <p>B 站搜索若报 <code>HTTP 412 Precondition Failed</code>，在浏览器打开一次 <code>bilibili.com</code>，用扩展导出 Netscape 格式 <code>cookies.txt</code>（至少含 <code>buvid3</code>，可不登录），在此上传。</p>
+    <label class="check"><input id="cookiesOn" type="checkbox" /> 下载时附带 yt-dlp cookies</label>
+    <label for="cookieFile">选择 cookies.txt</label>
+    <input id="cookieFile" type="file" accept=".txt,text/plain" />
+    <label for="cookieText">或粘贴 cookies 文本</label>
+    <textarea id="cookieText" placeholder="# Netscape HTTP Cookie File"></textarea>
+    <div class="row">
+      <button class="save" id="btnCookie" onclick="uploadCookies()">上传 cookies</button>
+    </div>
+
     <div class="row">
       <button class="save" id="btnSave" onclick="save(false)">保存</button>
       <button class="restart" id="btnRestart" onclick="save(true)">保存并重启</button>
@@ -655,6 +813,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       document.getElementById('search').value = opts.search_prefix || 'bilisearch:';
       document.getElementById('nodl').checked = !!opts.disable_download;
       document.getElementById('verbose').checked = !!opts.verbose;
+      document.getElementById('cookiesOn').checked = !!opts.enable_yt_dlp_cookies;
     }
 
     function collectOptions() {
@@ -667,6 +826,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         search_prefix: document.getElementById('search').value,
         disable_download: document.getElementById('nodl').checked,
         verbose: document.getElementById('verbose').checked,
+        enable_yt_dlp_cookies: document.getElementById('cookiesOn').checked,
       };
     }
 
@@ -702,9 +862,41 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       lines.push('实际目标: ' + (mp.entity_id || '-'));
       if (mp.friendly_name) lines.push('名称: ' + mp.friendly_name);
       if (mp.state) lines.push('播放器状态: ' + mp.state);
+      const ck = data.cookies || {};
+      if (ck.present) {
+        lines.push(
+          'cookies: 已保存 ' + (ck.line_count || 0) + ' 条' +
+          (ck.has_bilibili ? ' (含 B 站)' : '') +
+          (ck.has_buvid3 ? ' buvid3' : '') +
+          (ck.mtime ? ' @ ' + ck.mtime : '')
+        );
+      } else {
+        lines.push('cookies: 未上传');
+      }
+      lines.push('启用 --cookies: ' + (!!opts.enable_yt_dlp_cookies));
       if (data.restarting) lines.push('插件正在重启…');
       el.textContent = lines.join('\\n');
       el.className = 'meta ' + (data.error || conv.missing || (mp && mp.error) ? 'err' : 'ok');
+    }
+
+    async function uploadCookies() {
+      document.getElementById('btnCookie').disabled = true;
+      try {
+        let text = document.getElementById('cookieText').value || '';
+        const file = document.getElementById('cookieFile').files[0];
+        if (file) text = await file.text();
+        const data = await api('./api/cookies', 'POST', {
+          text: text,
+          enable: true,
+        });
+        if (data.ok) {
+          if (data.options) applyOptions(data.options);
+          document.getElementById('cookiesOn').checked = true;
+        }
+        render(Object.assign(await api('./api/status'), data));
+      } finally {
+        document.getElementById('btnCookie').disabled = false;
+      }
     }
 
     async function refresh() {

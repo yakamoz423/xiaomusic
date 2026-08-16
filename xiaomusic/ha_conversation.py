@@ -139,7 +139,7 @@ class HaConversationPoller:
         while not self.conversation_entity:
             self.log.warning(
                 "conversation_entity not set — open Ingress /ha-config "
-                "(or :8099) to pick a MIOT conversation sensor"
+                "(or :8109) to pick a MIOT conversation sensor"
             )
             await asyncio.sleep(5)
             if self._options_loader is None:

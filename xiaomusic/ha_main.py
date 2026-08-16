@@ -48,6 +48,7 @@ def apply_ha_options(config: Config, options: dict[str, Any]) -> None:
     config.continue_play = False
     config.verbose = bool(options.get("verbose", False))
     config.disable_download = bool(options.get("disable_download", False))
+    config.enable_yt_dlp_cookies = bool(options.get("enable_yt_dlp_cookies", False))
 
     search_prefix = str(options.get("search_prefix") or "bilisearch:").strip()
     if search_prefix:
@@ -148,12 +149,25 @@ async def async_main() -> None:
     xiaomusic.device_manager._update_devices()
     xiaomusic.log.info(
         "HA options applied: keywords_play=%r search_prefix=%r "
-        "disable_download=%s key_match_order_head=%s",
+        "disable_download=%s enable_yt_dlp_cookies=%s cookies_file=%s "
+        "cookies_present=%s key_match_order_head=%s",
         xiaomusic.config.keywords_play,
         xiaomusic.config.search_prefix,
         xiaomusic.config.disable_download,
+        xiaomusic.config.enable_yt_dlp_cookies,
+        xiaomusic.config.yt_dlp_cookies_path,
+        os.path.isfile(xiaomusic.config.yt_dlp_cookies_path)
+        and os.path.getsize(xiaomusic.config.yt_dlp_cookies_path) > 0,
         xiaomusic.config.key_match_order[:8],
     )
+    if xiaomusic.config.enable_yt_dlp_cookies and not (
+        os.path.isfile(xiaomusic.config.yt_dlp_cookies_path)
+        and os.path.getsize(xiaomusic.config.yt_dlp_cookies_path) > 0
+    ):
+        xiaomusic.log.warning(
+            "enable_yt_dlp_cookies=true but cookies file is missing: %s",
+            xiaomusic.config.yt_dlp_cookies_path,
+        )
 
     ha_player = HaPlayer(
         media_player=media_player,
@@ -200,7 +214,7 @@ async def async_main() -> None:
 
     xiaomusic.log.info(
         "XiaoMusic HA mode: conversation=%s media_player=%s music_url=%s:%s "
-        "(Ingress web UI :%s , HA config /ha-config or :8099)",
+        "(Ingress web UI :%s , HA config /ha-config or :8109)",
         conversation_entity or "(pending via /ha-config)",
         media_player or "(auto)",
         xiaomusic.config.hostname,

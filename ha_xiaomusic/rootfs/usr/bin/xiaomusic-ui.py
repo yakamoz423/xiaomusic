@@ -102,6 +102,16 @@ class UIHandler(BaseHTTPRequestHandler):
                     ha_ui.enrich_result(result),
                 )
                 return
+            if path.endswith("/api/cookies") or path == "/api/cookies":
+                result = ha_ui.save_cookies_text(
+                    str(body.get("text") or ""),
+                    enable=bool(body.get("enable", True)),
+                )
+                self._send_json(
+                    200 if result.get("ok") else 400,
+                    ha_ui.enrich_result(result),
+                )
+                return
         except ValueError as err:
             self._send_json(400, {"ok": False, "error": str(err)})
             return

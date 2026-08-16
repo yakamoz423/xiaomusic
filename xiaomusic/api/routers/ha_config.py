@@ -83,3 +83,23 @@ async def ha_config_test_stop():
         )
     except Exception as err:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": str(err)}, status_code=500)
+
+
+@router.post("/api/cookies")
+async def ha_config_save_cookies(request: Request):
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    try:
+        result = ha_ui.save_cookies_text(
+            str(body.get("text") or ""),
+            enable=bool(body.get("enable", True)),
+        )
+        return JSONResponse(ha_ui.enrich_result(result))
+    except ValueError as err:
+        return JSONResponse({"ok": False, "error": str(err)}, status_code=400)
+    except Exception as err:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(err)}, status_code=500)
