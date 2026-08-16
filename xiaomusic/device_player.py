@@ -311,7 +311,14 @@ class XiaoMusicDevice:
 
         # 初始检查逻辑
         if not search_key and not name:
-            if self.check_play_next():
+            if self._is_ha_backend():
+                name = self.get_cur_music()
+                if not name or not self.xiaomusic.music_library.is_music_exist(name):
+                    self.log.info(
+                        "HA mode: empty play and no local current track, do not auto-next"
+                    )
+                    return
+            elif self.check_play_next():
                 await self._play_next()
                 return
             else:
@@ -742,14 +749,17 @@ class XiaoMusicDevice:
         self.log.info(f"do_tts ok. cur_music:{self.get_cur_music()}")
         await self.check_replay()
 
-    async def force_stop_xiaoai(self, device_id):
+    async def force_stop_xiaoai(self, device_id, *, takeover: bool = True):
         """强制停止小爱播放"""
         try:
             if getattr(self.config, "playback_backend", "mina") == "ha":
                 ha_player = getattr(self.xiaomusic, "ha_player", None)
                 if ha_player is not None:
-                    # TTS stop → wait → stop XiaoAI's own song
-                    await ha_player.interrupt_xiaoai_reply()
+                    if takeover:
+                        # TTS stop → wait → stop XiaoAI's own song (play takeover)
+                        await ha_player.interrupt_xiaoai_reply()
+                    else:
+                        await ha_player.stop()
                 else:
                     self.log.warning("playback_backend=ha but ha_player is missing")
                 return
@@ -790,8 +800,9 @@ class XiaoMusicDevice:
             return False
 
         if self._download_proc.returncode is not None:
-            self.log.info(
-                f"Process exited with returncode:{self._download_proc.returncode}"
+            self.log.debug(
+                "Download process already exited returncode:%s",
+                self._download_proc.returncode,
             )
             return False
 
@@ -851,6 +862,9 @@ class XiaoMusicDevice:
 
     async def check_replay(self):
         """检查是否需要继续播放被打断的歌曲"""
+        if self._is_ha_backend():
+            self.log.info("HA mode: skip check_replay (no auto resume/next)")
+            return
         if self.is_playing and not self.isdownloading():
             if not self.config.continue_play:
                 # 重新播放歌曲
@@ -1291,16 +1305,19 @@ class XiaoMusicDevice:
             await asyncio.sleep(3)  # 等它说完
         # 取消组内所有的下一首歌曲的定时器
         await self.cancel_group_next_timer()
-        await self.group_force_stop_xiaoai()
+        await self.group_force_stop_xiaoai(takeover=False)
         self.log.info("stop now")
 
-    async def group_force_stop_xiaoai(self):
+    async def group_force_stop_xiaoai(self, *, takeover: bool = True):
         """强制停止组内所有设备"""
         device_id_list = self.xiaomusic.device_manager.get_group_device_id_list(
             self.group_name
         )
         self.log.info(f"group_force_stop_xiaoai {self.group_name} {device_id_list}")
-        tasks = [self.force_stop_xiaoai(device_id) for device_id in device_id_list]
+        tasks = [
+            self.force_stop_xiaoai(device_id, takeover=takeover)
+            for device_id in device_id_list
+        ]
         results = await asyncio.gather(*tasks)
         self.log.info(f"group_force_stop_xiaoai {device_id_list} {results}")
         return results

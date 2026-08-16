@@ -14,6 +14,17 @@ from xiaomusic.config import KEY_WORD_ARG_BEFORE_DICT
 if TYPE_CHECKING:
     pass
 
+_PLAY_OPS = {
+    "play",
+    "playlocal",
+    "online_play",
+    "online_playlist_play",
+    "singer_play",
+    "play_music_list",
+}
+_PLAY_LEADINS = {"", "请", "帮我", "给我", "请帮我", "麻烦", "我想", "我要"}
+_PLAY_NEGATIONS = ("取消", "不要", "别", "停止", "关掉", "关闭", "退出", "禁止")
+
 
 class CommandHandler:
     """命令处理器
@@ -33,6 +44,9 @@ class CommandHandler:
         self.log = log
         self.xiaomusic = xiaomusic_instance
         self.last_cmd = ""
+
+    def _is_ha_backend(self) -> bool:
+        return getattr(self.config, "playback_backend", "mina") == "ha"
 
     async def do_check_cmd(self, did="", query="", ctrl_panel=True, **kwargs):
         """检查并执行命令
@@ -58,14 +72,19 @@ class CommandHandler:
             # 匹配命令
             opvalue, oparg = self.match_cmd(device, query, ctrl_panel)
             if not opvalue:
-                # 未匹配到命令，等待后检查是否需要重播
+                # MiNA: unmatched XiaoAI replies interrupt music, then resume.
+                # HA play-once: never auto-resume / auto-next on 关空调 etc.
+                if self._is_ha_backend():
+                    self.log.info("HA mode: unmatched query, do not replay")
+                    return
                 await asyncio.sleep(1)
                 await device.check_replay()
                 return
 
-            # HA: stop XiaoAI TTS, wait, stop XiaoAI's own follow-up track.
-            # MiNA: original force_stop path.
-            await device.group_force_stop_xiaoai()
+            # Play takeover: stop XiaoAI TTS, wait, stop XiaoAI's own track.
+            # Stop: just pause/stop — do not wait 2s (that path is for play).
+            if opvalue != "stop":
+                await device.group_force_stop_xiaoai()
             if hasattr(device, "_cancel_tts_timer"):
                 device._cancel_tts_timer("before command")
 
@@ -147,6 +166,26 @@ class CommandHandler:
             ):
                 self.log.info(f"不在激活命令中 {opvalue}")
                 continue
+
+            if opvalue in _PLAY_OPS:
+                pre = (argpre or "").strip()
+                if any(pre == neg or pre.endswith(neg) for neg in _PLAY_NEGATIONS):
+                    self.log.info(
+                        "play keyword with negation, treat as stop. "
+                        "query=%r opkey=%s argpre=%r",
+                        query,
+                        opkey,
+                        argpre,
+                    )
+                    return "stop", "notts"
+                if self._is_ha_backend() and pre not in _PLAY_LEADINS:
+                    self.log.info(
+                        "HA: ignore play match not at start. opkey=%s argpre=%r query=%r",
+                        opkey,
+                        argpre,
+                        query,
+                    )
+                    continue
 
             self.log.info(f"匹配到指令. opkey:{opkey} opvalue:{opvalue} oparg:{oparg}")
 

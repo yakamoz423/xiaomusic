@@ -173,7 +173,8 @@ class Config:
         "XIAOMUSIC_KEYWORDS_SINGER_PLAY", "播放歌手,搜索歌手"
     )
     keywords_stop: str = os.getenv(
-        "XIAOMUSIC_KEYWORDS_STOP", "关机,暂停,停止,停止播放,关闭,退出,关掉音乐"
+        "XIAOMUSIC_KEYWORDS_STOP",
+        "关机,暂停,停止,停止播放,取消播放,不要播放,关闭,退出,关掉音乐",
     )
     keywords_playlist: str = os.getenv(
         "XIAOMUSIC_KEYWORDS_PLAYLIST", "播放列表,播放歌单"

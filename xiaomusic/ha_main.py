@@ -97,17 +97,28 @@ def apply_ha_options(config: Config, options: dict[str, Any]) -> None:
     }
 
     # command_prefixes maps to keywords_play (comma-separated).
-    # Put custom prefixes first so short ones like「播放」beat longer defaults.
     prefixes = str(options.get("command_prefixes") or "").strip()
     if prefixes:
         config.keywords_play = prefixes
-        config.init()
-        # Ensure custom play keys are tried early in fuzzy match order.
-        custom = [k for k in prefixes.split(",") if k]
-        rest = [k for k in config.key_match_order if k not in custom]
-        config.key_match_order = custom + rest
-    else:
-        config.init()
+
+    extra_stop = ["取消播放", "不要播放"]
+    stop_keys: list[str] = []
+    for key in extra_stop + [
+        k.strip() for k in (config.keywords_stop or "").split(",")
+    ]:
+        if key and key not in stop_keys:
+            stop_keys.append(key)
+    config.keywords_stop = ",".join(stop_keys)
+    config.init()
+
+    # Stop phrases first so 「取消播放」 is stop, not play.
+    play_keys = [k.strip() for k in (config.keywords_play or "").split(",") if k.strip()]
+    rest = [
+        k
+        for k in config.key_match_order
+        if k not in play_keys and k not in stop_keys
+    ]
+    config.key_match_order = stop_keys + play_keys + rest
 
     _ensure_dirs(
         config.music_path,
